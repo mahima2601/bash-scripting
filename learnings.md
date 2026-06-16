@@ -369,3 +369,128 @@ fi
 just reads its exit code. You'll write this pattern constantly in health checks,
 prerequisite validators, and conditionals — it's exactly what Day 9 (checking if
 a user exists) needs.
+
+### Section 6 — Heredocs (`<< EOF`) for writing multi-line files
+
+A **heredoc** ("here-document") lets you feed a **block of multi-line text** into
+a command, instead of typing one line at a time. You'll use it constantly to
+generate YAML manifests and config files.
+
+#### Anatomy of the command
+
+```bash
+cat > my_app.yaml << "EOF"
+line one
+line two
+EOF
+```
+
+| Part            | Meaning                                                       |
+|-----------------|---------------------------------------------------------------|
+| `cat`           | the command that will receive the text                        |
+| `> my_app.yaml` | redirect `cat`'s output into this file (the `>` you know)      |
+| `<<`            | the **heredoc operator**: "everything that follows is input"  |
+| `EOF`           | the **marker** for where the text starts and ends             |
+| middle lines    | your actual content                                           |
+| final `EOF`     | the **closing marker** — "the text stops here"                |
+
+Bash reads everything between the opening `<< EOF` and the closing `EOF`, and
+pipes it into `cat`, which writes it to the file.
+
+#### `EOF` is just a label, not a magic word
+
+`EOF` means "End Of File" by convention, but **any word works** — the only rules
+are: the closing marker must **match** the opening one, and must sit **alone on
+its own line** with nothing before or after it.
+
+```bash
+cat > test.txt << END_OF_CONFIG
+line one
+line two
+END_OF_CONFIG
+```
+
+This works identically. People just use `EOF` out of habit.
+
+#### Why use it? Readability
+
+Without a heredoc, a multi-line file is clumsy:
+
+```bash
+echo "line one" > test.txt
+echo "line two" >> test.txt
+echo "line three" >> test.txt
+```
+
+With a heredoc, it's one clean block:
+
+```bash
+cat > test.txt << EOF
+line one
+line two
+line three
+EOF
+```
+
+#### The important part — quoted vs unquoted marker
+
+The quotes around the marker control whether Bash **expands variables and
+commands** inside the heredoc.
+
+**Unquoted `EOF`** → variables and `$(...)` **are expanded**:
+
+```bash
+name="Mahima"
+cat << EOF
+Hello $name
+Today is $(date +%F)
+EOF
+```
+Output:
+```
+Hello Mahima
+Today is 2026-06-16
+```
+
+**Quoted `"EOF"`** → everything is taken **literally**, no expansion:
+
+```bash
+name="Mahima"
+cat << "EOF"
+Hello $name
+Today is $(date +%F)
+EOF
+```
+Output:
+```
+Hello $name
+Today is $(date +%F)
+```
+
+#### Why this matters for DevOps
+
+When generating config files you often **want** substitution — e.g. injecting an
+environment name or replica count into a manifest, so use **unquoted** `EOF`:
+
+```bash
+ENV="production"
+REPLICAS=3
+
+cat > deployment.yaml << EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-$ENV
+spec:
+  replicas: $REPLICAS
+EOF
+```
+
+But if the file genuinely contains dollar signs you want kept **literal** — like
+a script using `$1`, or a config with `${VAR}` placeholders meant to be
+substituted *later* — use **quoted** `"EOF"` to protect them. That's exactly the
+Day 47 question (templating manifests).
+
+#### Rule to remember
+- `<< EOF` → **"fill in my variables"** (expand)
+- `<< "EOF"` → **"leave everything exactly as I typed it"** (literal)
