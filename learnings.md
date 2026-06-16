@@ -34,13 +34,15 @@ to persist in your current shell.
 
 ---
 
-## Day 2 — Command-line arguments (positional parameters)
+## Day 2
+
+### Section 1 — Command-line arguments (positional parameters)
 
 In Bash, command-line arguments are captured automatically using **positional
 parameters** like `$1`, `$2`, `$3` — the number is the position of the argument
 passed on the command line.
 
-### Special argument variables
+#### Special argument variables
 
 | Variable      | Meaning                                                        |
 |---------------|---------------------------------------------------------------|
@@ -51,13 +53,13 @@ passed on the command line.
 | `$@`          | All arguments as a list/array — **best for looping**.         |
 | `$*`          | All arguments combined into a single string.                  |
 
-### Key takeaways
+#### Key takeaways
 - Always **quote** them: `"$1"`, `"$@"` — unquoted values break on spaces.
 - `"$@"` vs `"$*"`: `"$@"` keeps each argument separate; `"$*"` joins them
   into one string. Use `"$@"` when looping.
 - Validate input with `$#` and exit non-zero on bad input: `exit 1`.
 
-### Method 1: Basic positional parameters (best for simple scripts)
+#### Method 1: Basic positional parameters (best for simple scripts)
 
 If you just need a few explicit inputs, read them directly using numbers.
 
@@ -85,7 +87,7 @@ Total arguments passed: 2
 > Note: Always use double quotes around variables (e.g. `"$1"`) to prevent
 > issues if an argument contains spaces.
 
-### Method 2: Looping through a variable number of arguments
+#### Method 2: Looping through a variable number of arguments
 
 If your script handles an unknown or variable number of arguments (like a list
 of files), loop over the `"$@"` list.
@@ -111,7 +113,7 @@ Item: file2.txt
 Item: file3.txt
 ```
 
-### Conditionals — how `if/else` works
+### Section 2 — Conditionals: how `if/else` works
 
 Every conditional block **starts with `if`**, introduces actions with **`then`**,
 and **closes with `fi`** (`if` spelled backward).
@@ -158,7 +160,7 @@ The brackets you choose decide how the condition is processed:
 - **Double parentheses `(( ... ))`** — used **exclusively** for math and integer
   comparisons.
 
-### Common Bash operators
+### Section 3 — Common Bash operators
 
 #### Number comparisons (inside `[ ]` / `[[ ]]`)
 
@@ -224,3 +226,146 @@ fi
 > that's **invalid** because it opens with `((` but closes with `]]`. Brackets
 > must match: `(( ... ))`, `[[ ... ]]`, or `[ ... ]`. Mixing them is a syntax
 > error.
+
+### Section 4 — Redirecting errors with `>&2` (stdout vs stderr)
+
+Think of every script as a machine with **two output hoses**:
+
+| Number | Name   | Purpose                                  |
+|--------|--------|------------------------------------------|
+| `0`    | stdin  | where input comes in                     |
+| `1`    | stdout | **normal results** go out here           |
+| `2`    | stderr | **errors / warnings / usage** go out here|
+
+These numbers are called **file descriptors**. By default *both* stdout and
+stderr spray onto your screen, so they look like one thing — but they're two
+separate streams, and you can point each one somewhere different.
+
+#### What `>&2` means
+
+`>&2` means **"send this output to file descriptor 2 (stderr)"**. So:
+
+```bash
+echo "Usage: $0 <name>" >&2     # goes to the ERROR hose, not the normal one
+```
+
+#### Why it matters — a hands-on example
+
+Make a tiny test script:
+
+```bash
+cat > test.sh << 'EOF'
+#!/bin/bash
+echo "This is NORMAL output"
+echo "This is an ERROR message" >&2
+EOF
+chmod +x test.sh
+```
+
+Run it plainly — both lines appear, because both hoses point at the screen:
+
+```bash
+$ ./test.sh
+This is NORMAL output
+This is an ERROR message
+```
+
+Now capture **only stdout** into a file. The `>` symbol redirects hose 1 only:
+
+```bash
+$ ./test.sh > output.txt
+This is an ERROR message        # still on screen! stderr was NOT redirected
+```
+
+Look inside the file — the error is **not** there:
+
+```bash
+$ cat output.txt
+This is NORMAL output
+```
+
+The two hoses went to two different places. 🎯 Clean up: `rm test.sh output.txt`
+
+#### Connect it to the Day 2 script
+
+If the script's real job is to produce a greeting you might save to a file:
+
+```bash
+$ ./2_day.sh John > greeting.txt     # greeting.txt = "Hello, John!"  ✅
+```
+
+Now forget the name:
+
+- **Usage message uses `>&2`** → it rides the error hose, so `>` doesn't capture
+  it. You see the error on screen, and `greeting.txt` stays clean. ✅
+- **Usage message does NOT use `>&2`** → it rides the normal hose, gets captured
+  by `>`, and lands *inside* `greeting.txt`. Your screen shows nothing, you think
+  it worked, but the file is polluted with an error message. ❌
+
+#### Rule of thumb
+- **Real output → stdout** (the default, no redirect needed).
+- **Errors, warnings, usage, progress logs → stderr** (`>&2`).
+
+This is why in a pipeline like `kubectl get pods | grep Running`, only the actual
+data flows through the pipe — diagnostic noise on stderr doesn't contaminate it.
+A small habit that separates clean, composable scripts from messy ones.
+
+### Section 5 — `/dev/null` and silencing output
+
+#### The three redirect variants
+
+| Redirect       | Meaning                          |
+|----------------|----------------------------------|
+| `> /dev/null`  | trash **stdout** only            |
+| `2> /dev/null` | trash **stderr** only            |
+| `&> /dev/null` | trash **both** stdout and stderr |
+
+Now take this command apart into two pieces:
+
+```bash
+./2_day.sh > /dev/null
+```
+
+- **`/dev/null`** is the **"trash can" of Linux** — a special file that throws
+  away anything sent to it. Write a gigabyte to it and it just vanishes. Nothing
+  is stored, nothing comes back. It's a black hole.
+- **`>`** (from Section 4) redirects **stdout** (hose 1, normal output).
+
+So `./2_day.sh > /dev/null` means: **"run the script and throw away its normal
+output."** stdout disappears into the trash — but **stderr (hose 2) is
+untouched**, so any error messages still appear on your screen.
+
+#### Why this is a great test
+
+Because `>` only trashes stdout, anything left on your screen *must* have come
+from stderr. Run the Day 2 script with no argument:
+
+```bash
+$ ./2_day.sh > /dev/null
+pls run the script like this- ./2_day.sh <name>
+```
+
+The usage message still appears — which **proves** it's correctly going to
+stderr (`>&2`). If it were going to stdout, `>` would have trashed it too.
+
+#### Where you'll use `/dev/null` in real DevOps work
+
+Often you don't care about a command's *output* — only whether it **succeeded or
+failed** (its exit code). So you silence the output to keep scripts quiet:
+
+```bash
+# Check if a user exists — we don't want the output, just the result
+if id "deploy" &>/dev/null; then
+    echo "User exists"
+fi
+
+# Check if nginx is installed without printing its path
+if command -v nginx > /dev/null; then
+    echo "nginx is installed"
+fi
+```
+
+`id "deploy" &>/dev/null` runs the check **completely silently**, and the `if`
+just reads its exit code. You'll write this pattern constantly in health checks,
+prerequisite validators, and conditionals — it's exactly what Day 9 (checking if
+a user exists) needs.
