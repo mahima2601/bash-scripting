@@ -494,3 +494,176 @@ Day 47 question (templating manifests).
 #### Rule to remember
 - `<< EOF` → **"fill in my variables"** (expand)
 - `<< "EOF"` → **"leave everything exactly as I typed it"** (literal)
+
+---
+
+## Day 3
+
+### Section 1 — Arithmetic with `$(( ))`
+
+Bash does math inside **double parentheses**: `$(( expression ))`. This is called
+**arithmetic expansion** — Bash evaluates the math and substitutes the result.
+
+```bash
+num1=10
+num2=3
+
+echo "sum=$((num1 + num2))"    # sum=13
+echo "diff=$((num1 - num2))"   # diff=7
+echo "prod=$((num1 * num2))"   # prod=30
+echo "quot=$((num1 / num2))"   # quot=3   <- integer division!
+```
+
+#### The `$` is optional inside `(( ))`
+
+Arithmetic context already knows `num1` is a variable, so both forms work:
+
+```bash
+echo $(( num1 + num2 ))     # preferred — cleaner
+echo $(( $num1 + $num2 ))   # also works
+```
+
+#### Operators
+
+| Operator | Meaning                        | Example          | Result |
+|----------|--------------------------------|------------------|--------|
+| `+`      | addition                       | `$((5 + 3))`     | `8`    |
+| `-`      | subtraction                    | `$((5 - 3))`     | `2`    |
+| `*`      | multiplication                 | `$((5 * 3))`     | `15`   |
+| `/`      | **integer** division           | `$((10 / 3))`    | `3`    |
+| `%`      | modulo (remainder)             | `$((10 % 3))`    | `1`    |
+| `**`     | exponent (power)               | `$((2 ** 10))`   | `1024` |
+| `++` `--`| increment / decrement          | `(( i++ ))`      | —      |
+| `+=` `-=`| compound assignment            | `(( i += 5 ))`   | —      |
+
+### Section 2 — The big gotcha: Bash only does integer math
+
+**Bash cannot do decimals.** Division **truncates** (chops off the remainder) —
+it does not round.
+
+```bash
+echo $((10 / 3))    # 3     (not 3.33)
+echo $((9 / 10))    # 0     (not 0.9!)
+echo $((7 / 2))     # 3     (not 3.5 — truncated, NOT rounded to 4)
+```
+
+#### Use `%` to get the remainder
+
+```bash
+echo $((10 / 3))    # 3  <- how many whole times
+echo $((10 % 3))    # 1  <- what's left over
+```
+
+`%` is essential for things like converting seconds to `Xh Ym Zs` (Day 33).
+
+#### Need real decimals? Use `bc` or `awk`
+
+```bash
+# bc: -l loads the math library, scale sets decimal places
+echo "scale=2; 10 / 3" | bc        # 3.33
+
+# awk: often easier, no pipe needed
+awk 'BEGIN { printf "%.2f\n", 10 / 3 }'    # 3.33
+```
+
+### Section 3 — `$(( ))` vs `(( ))` — two different things
+
+| Form        | Purpose                            | Use in                       |
+|-------------|------------------------------------|------------------------------|
+| `$(( ... ))`| **Returns a value** (expansion)    | `x=$((a + b))`, `echo $((a*b))` |
+| `(( ... ))` | **Runs a command** (returns exit code) | `if (( a > b ))`, `(( i++ ))` |
+
+```bash
+result=$(( 5 + 3 ))        # $(( )) — gives you the value 8
+
+if (( num1 > num2 )); then # (( ))  — used as a true/false test
+    echo "num1 is bigger"
+fi
+
+(( counter++ ))            # (( ))  — performs an action, no value needed
+```
+
+> Remember from Day 2, Section 3: inside `(( ))` you can use normal math symbols
+> (`>`, `<`, `==`) instead of the `-gt` / `-lt` / `-eq` flags that `[ ]` requires.
+
+### Section 4 — Validating numeric input
+
+This is where the Day 3 script needs hardening. Three problems to guard against:
+
+#### Problem 1: missing arguments
+
+```bash
+$ ./3_day.sh
+sum=0
+3_day.sh: line 7: num1 / num2: division by 0
+```
+Empty variables become `0` in arithmetic — so you get garbage, then a crash.
+
+#### Problem 2: division by zero
+
+```bash
+$ ./3_day.sh 10 0
+3_day.sh: line 7: division by 0 (error token is "2")
+```
+Bash **cannot** divide by zero — it's a runtime error, not a warning.
+
+#### Problem 3: non-numeric input is silently treated as 0 ⚠️
+
+```bash
+$ ./3_day.sh abc 5
+sum=5        # "abc" silently became 0 — no error at all!
+```
+This is the **dangerous** one: no crash, no warning, just a **wrong answer**.
+
+#### The fix — validate with a regex
+
+```bash
+#!/bin/bash
+
+# 1. Check argument count
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <num1> <num2>" >&2
+    exit 1
+fi
+
+num1="$1"
+num2="$2"
+
+# 2. Check both are integers (^-? allows negatives, [0-9]+ = one or more digits)
+if ! [[ "$num1" =~ ^-?[0-9]+$ ]] || ! [[ "$num2" =~ ^-?[0-9]+$ ]]; then
+    echo "Error: both arguments must be integers" >&2
+    exit 1
+fi
+
+echo "sum=$((num1 + num2))"
+echo "diff=$((num1 - num2))"
+echo "prod=$((num1 * num2))"
+
+# 3. Guard division by zero
+if (( num2 == 0 )); then
+    echo "quot=undefined (cannot divide by zero)" >&2
+else
+    echo "quot=$((num1 / num2))"
+fi
+```
+
+Breaking down the regex `^-?[0-9]+$`:
+
+| Part     | Meaning                                    |
+|----------|--------------------------------------------|
+| `^`      | start of the string                        |
+| `-?`     | an optional minus sign (for negatives)     |
+| `[0-9]+` | one or more digits                         |
+| `$`      | end of the string                          |
+
+The `^` and `$` anchors matter — without them, `12abc` would wrongly pass because
+the regex would match just the `12` part.
+
+> Note: `=~` only works inside `[[ ]]`, never inside single `[ ]`. This is one of
+> the main reasons to prefer `[[ ]]` in Bash.
+
+#### Key takeaways
+- Bash arithmetic is **integer only** — `/` truncates, never rounds.
+- Empty or non-numeric variables silently become `0` — **always validate**.
+- Division by zero is a **fatal error** — guard it before dividing.
+- Send errors to stderr with `>&2` and `exit 1` (Day 2, Section 4).
