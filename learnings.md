@@ -1708,3 +1708,149 @@ How it flows:
 - No variable named → the input lands in `$REPLY`.
 - Default to `read -r`; use `IFS= read -r line` to read a whole line verbatim.
 - Combine `read` with `-d`/`-r`/`-w` tests to validate what the user typed.
+
+---
+
+## Day 6
+
+### Section 1 — The `date` command basics
+
+`date` prints the current date and time. On its own it gives a long default:
+
+```bash
+$ date
+Sun Jul 19 02:03:09 IST 2026
+```
+
+The power comes from **`+FORMAT`** — a `+` followed by `%`-codes that pick
+*exactly* which pieces you want and how to arrange them:
+
+```bash
+$ date +%F
+2026-07-19
+$ date +%s
+1784406789
+```
+
+- Anything after `+` is a **format string**. `%`-codes get replaced with values;
+  everything else (dashes, spaces, colons) is printed literally.
+- Wrap it in quotes when your format has spaces: `date +"%F %T"`.
+
+### Section 2 — Format specifiers (the `%` codes)
+
+The ones you'll actually use:
+
+| Code | Means                        | Example output |
+|------|------------------------------|----------------|
+| `%F` | full date = `%Y-%m-%d`       | `2026-07-19`   |
+| `%s` | Unix timestamp (secs since 1970) | `1784406789` |
+| `%Y` | 4-digit year                 | `2026`         |
+| `%m` | month (01–12)                | `07`           |
+| `%d` | day of month (01–31)         | `19`           |
+| `%H` | hour (00–23)                 | `02`           |
+| `%M` | minute (00–59)               | `03`           |
+| `%S` | second (00–59)               | `09`           |
+| `%T` | full time = `%H:%M:%S`       | `02:03:09`     |
+| `%A` | weekday name                 | `Sunday`       |
+| `%B` | month name                   | `July`         |
+| `%Z` | timezone name                | `IST`          |
+| `%j` | day of year (001–366)        | `200`          |
+
+Mix them freely with literal text:
+
+```bash
+$ date +"%Y-%m-%d"                 # 2026-07-19   (same as %F)
+$ date +"%F %T"                    # 2026-07-19 02:03:09
+$ date +"%A, %B %d, %Y"            # Sunday, July 19, 2026
+$ date -u +"%F %T %Z"              # 2026-07-18 20:33:09 UTC   (-u = UTC)
+```
+
+> `-u` prints **UTC** instead of your local timezone — important on servers,
+> which usually run in UTC.
+
+### Section 3 — Command substitution: capturing the output
+
+This is the **real concept** of Day 6. `date` just *prints* — to actually *use*
+its value (store it, put it in a filename, build a message), wrap it in
+**`$( ... )`**, which runs the command and substitutes its output right there
+(Day 3 §7):
+
+```bash
+today=$(date +%F)                  # store it in a variable
+echo "Today is $today"             # Today is 2026-07-19
+
+echo "Backup made at $(date +%T)"  # drop it straight into a string
+logfile="app-$(date +%F).log"      # app-2026-07-19.log
+```
+
+Without `$( )` you can only *see* the date; with `$( )` you can *use* it.
+
+### Section 4 — The Day 6 solution
+
+Task: print the current date as `YYYY-MM-DD` **and** the Unix timestamp.
+
+```bash
+#!/bin/bash
+echo "Date: $(date +%F)"          # Date: 2026-07-19
+echo "Timestamp: $(date +%s)"     # Timestamp: 1784406789
+```
+
+- `date +%F` → the date in `YYYY-MM-DD`.
+- `date +%s` → seconds since Jan 1, 1970 (the Unix timestamp).
+- `$( )` → command substitution drops each result into the echoed string.
+
+> ⚠️ The `awk 'BEGIN {srand(); print srand()}'` trick you first tried *does*
+> return the timestamp (srand with no arg seeds from the clock and returns the
+> previous seed), but it's an obscure hack, and it can't give you the `%F` date.
+> `date +%s` is the clear, correct tool.
+
+### Section 5 — Where you'll actually use `date` (DevOps)
+
+`date` shows up constantly in real scripts:
+
+```bash
+# Timestamped backup file (Day 36)
+tar -czf "backup-$(date +%F).tar.gz" /etc
+
+# Timestamped log line — a logging function (Day 20) leans on this
+echo "[$(date +'%F %T')] deploy started"
+
+# A unique, sortable filename
+report="report-$(date +%Y%m%d-%H%M%S).csv"   # report-20260719-020309.csv
+```
+
+`%F`-style names sort chronologically when listed, which is why timestamped
+filenames use `YYYY-MM-DD` order.
+
+### Section 6 — Date math, and the macOS vs Linux gotcha ⚠️
+
+Doing arithmetic ("yesterday", "2 days ago") is where **macOS and Linux differ**
+— a very common cross-platform trap. Your Mac uses **BSD `date`**; Linux servers
+use **GNU `date`**, and the flags are *not* the same:
+
+| Goal                     | macOS (BSD) — your machine     | Linux (GNU) — servers          |
+|--------------------------|--------------------------------|--------------------------------|
+| Yesterday's date         | `date -v-1d +%F`               | `date -d "yesterday" +%F`      |
+| Tomorrow                 | `date -v+1d +%F`               | `date -d "tomorrow" +%F`       |
+| 2 days ago               | `date -v-2d +%F`               | `date -d "2 days ago" +%F`     |
+| 1 hour ago               | `date -v-1H +%T`               | `date -d "1 hour ago" +%T`     |
+| Epoch → human date       | `date -r 1784406222`           | `date -d @1784406222`          |
+
+Verified on your Mac:
+```bash
+$ date -v-1d +%F        # 2026-07-18   (yesterday)
+$ date -v+1d +%F        # 2026-07-20   (tomorrow)
+$ date -r 1784406222 +"%F %T"   # 2026-07-19 01:53:42
+```
+
+> Since you're learning for **Linux DevOps** but developing on **macOS**, write
+> scripts targeting GNU `date` (`-d`), but know they'll need the `-v` form to
+> test locally. Installing GNU coreutils (`brew install coreutils`) gives you
+> `gdate`, which behaves like Linux's `date`. This exact issue comes up in Day 30
+> (last-24-hours log filter) and Day 36 (backups).
+
+#### Key takeaways
+- `date +FORMAT` picks exactly the fields you want; `%F` = date, `%s` = timestamp.
+- **Capture** it with `$(date ...)` — that's the Day 6 concept, command substitution.
+- `-u` = UTC (servers), quote formats containing spaces.
+- Date **math** differs: macOS `date -v-1d`, Linux `date -d "yesterday"`.
