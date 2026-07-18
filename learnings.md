@@ -128,6 +128,21 @@ commands stacked up.
 | `awk`   | field-based text processing               | `awk '{print $1}' file`    |
 | `sed`   | stream editor (find/replace)              | `sed 's/a/b/g' file`       |
 
+**Finding a directory specifically**
+
+| Command                        | Finds a directory by…       |
+|--------------------------------|-----------------------------|
+| `find . -type d -name "logs"`  | name, walking the tree      |
+| `find / -type d -name "x" 2>/dev/null` | name, from root (silence errors) |
+| `mdfind -name "logs"`          | Spotlight index (**macOS**) |
+| `locate logs`                  | prebuilt index (**Linux**)  |
+| `ls -d */`                     | listing dirs in the current folder |
+| `pwd`                          | telling you where you are now |
+
+> `-type d` = **directories only** (`-type f` = files). `2>/dev/null` throws away
+> "permission denied" noise (Day 2 §5). Same tools apply to Day 17 (looping over
+> files) and Day 31 (finding the largest files).
+
 **System & process info**
 
 | Command    | What it does                        |
@@ -583,9 +598,16 @@ variable is empty.
 
 #### File checks
 
-- `-e` — true if the file or directory exists.
+- `-e` — true if the file or directory **exists**.
 - `-f` — true if it exists and is a **regular file** (not a folder).
 - `-d` — true if the path is a **directory**.
+- `-r` — true if the path is **readable**.
+- `-w` — true if the path is **writable**.
+- `-x` — true if the path is **executable** (mirrors the `x` bit, Day 0 §4).
+
+> These are exactly what **Day 4** needs — "does it exist? (`-d`) is it readable?
+> (`-r`) writable? (`-w`)". Always quote the path: `[[ -d "$path" ]]`, since a
+> user might type a path containing spaces.
 
 #### Complete practical example
 
@@ -1565,3 +1587,124 @@ echo "${name:-default}" # use "default" if name is empty
 - **Capture output** → `$( )`.
 - **Variable's value** → `${ }`.
 - Avoid `[ ]` in Bash; avoid `<`/`>` for numeric compares.
+
+---
+
+## Day 4
+
+### Section 1 — Reading user input with `read`
+
+Until now your scripts got their input from **arguments** (`$1`, `$2` — Day 2).
+`read` is the other way: it **pauses the script and waits for the user to type**
+something, then stores it in a variable.
+
+```bash
+read -p "Enter a directory path: " path
+```
+
+Piece by piece:
+
+| Piece                          | Meaning                                             |
+|--------------------------------|-----------------------------------------------------|
+| `read`                         | the command — read one line from input (stdin)      |
+| `-p "Enter a directory path: "`| **p**rint this prompt first (no newline after it)   |
+| `path`                         | the **variable** the typed text gets stored in      |
+
+After that line runs, whatever the user typed is in `$path`, and you use it like
+any variable — quoted: `"$path"`.
+
+```bash
+read -p "Enter a directory path: " path
+echo "You typed: $path"
+```
+
+#### If you don't name a variable, it goes into `$REPLY`
+
+```bash
+read -p "Continue? "        # no variable named
+echo "You said: $REPLY"     # bash stores it in REPLY by default
+```
+
+#### Reading several values at once
+
+`read` splits the typed line on spaces into the variables you list:
+
+```bash
+read -p "First and last name: " first last
+echo "Hi $first, surname $last"     # input "Ada Lovelace" -> first=Ada last=Lovelace
+```
+
+(The last variable soaks up **all** the remaining words.)
+
+#### Useful `read` flags
+
+| Flag  | What it does                                   | Example                        |
+|-------|------------------------------------------------|--------------------------------|
+| `-p`  | show a **prompt** first                        | `read -p "Name: " n`           |
+| `-r`  | **raw** — don't let `\` act as an escape (use this by default) | `read -r line`   |
+| `-s`  | **silent** — don't echo typing (passwords)     | `read -s -p "Password: " pw`   |
+| `-t`  | **timeout** in seconds                         | `read -t 5 -p "Quick! " x`     |
+| `-n`  | stop after **N characters** (no Enter needed)  | `read -n 1 -p "Y/N? " ans`     |
+| `-a`  | read words into an **array**                   | `read -a words`                |
+
+#### Two habits worth building now
+
+**1. Prefer `read -r`.** Without `-r`, Bash treats a backslash as an escape
+character and mangles input. Verified:
+
+```bash
+read x    <<< 'a\tb'   # x = a\tb typed...  -> becomes "atb"  (backslash eaten) ❌
+read -r y <<< 'a\tb'   # -> stays "a\tb"  (literal) ✅
+```
+
+**2. `IFS= read -r line` when you want the whole line exactly.** Plain `read`
+strips leading/trailing spaces; `IFS=` keeps them:
+
+```bash
+read z        <<< "   spaced   "   # -> "spaced"        (trimmed)
+IFS= read -r w <<< "   spaced   "   # -> "   spaced   "  (preserved)
+```
+
+This `while IFS= read -r line` pattern is the correct way to read a file line by
+line — you'll use it in Day 21 and it's a classic interview point (Day 52).
+
+### Section 2 — Putting it together: the Day 4 script
+
+Your Day 4 task: prompt for a directory path, then report whether it **exists**,
+and if so whether it's **readable** and **writable**. This combines `read`
+(Section 1) with the file-test operators (Day 2 §3: `-d`, `-r`, `-w`).
+
+```bash
+#!/bin/bash
+read -p "Enter a directory path: " path
+
+if [[ -d "$path" ]]; then
+    echo "directory exists"
+    if [[ -r "$path" ]]; then
+        echo "directory is readable"
+    fi
+    if [[ -w "$path" ]]; then
+        echo "directory is writable"
+    fi
+else
+    echo "directory does not exist"
+fi
+```
+
+How it flows:
+
+1. `read` pauses and stores what you type in `$path`.
+2. `[[ -d "$path" ]]` → is it an existing directory? (Day 2 §3)
+3. If yes, the **nested** `if`s check readable (`-r`) and writable (`-w`)
+   independently — a directory can be one, both, or neither.
+4. If it's not a directory, the `else` reports that.
+
+> Why quote `"$path"`? A user might type a path with spaces like
+> `/Users/mahima/My Folder`. Unquoted, `-d $path` would break into two words and
+> fail (Day 0 §6, Day 3 §7). Quoting keeps it as one path.
+
+#### Key takeaways
+- `read` waits for typed input; `read -p "prompt" var` is the common form.
+- No variable named → the input lands in `$REPLY`.
+- Default to `read -r`; use `IFS= read -r line` to read a whole line verbatim.
+- Combine `read` with `-d`/`-r`/`-w` tests to validate what the user typed.
