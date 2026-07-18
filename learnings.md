@@ -888,6 +888,88 @@ Day 47 question (templating manifests).
 - `<< EOF` → **"fill in my variables"** (expand)
 - `<< "EOF"` → **"leave everything exactly as I typed it"** (literal)
 
+### Section 7 — Redirection operators: `>` `2>` `&>` `>&2` `2>&1`
+
+These five look almost identical but do different things. One rule unlocks all of
+them. (Builds on §4 stdout/stderr and §5 `/dev/null`.)
+
+#### The one rule
+
+> **Without `&`, the target is a _filename_. With `&`, the target is a
+> _file-descriptor number_.**
+
+So `2>file` sends errors to a file literally named `file`, but `2>&1` sends
+errors to **wherever fd 1 (stdout) is currently pointing**. The `&` means "the
+thing after me is a stream, not a filename."
+
+Recall the streams: **stdout = fd 1** (normal output), **stderr = fd 2** (errors).
+
+#### The five operators
+
+| Syntax  | Long form   | Meaning                            | Typical use            |
+|---------|-------------|------------------------------------|------------------------|
+| `>`     | `1>`        | stdout → a **file** (overwrite)    | `cmd > out.txt`        |
+| `2>`    | `2>`        | stderr → a **file**                | `cmd 2> err.txt`       |
+| `&>`    | `>f 2>&1`   | **both** stdout+stderr → a file    | `cmd &> all.log`       |
+| `>&2`   | `1>&2`      | stdout → **wherever stderr goes**  | `echo "oops" >&2`      |
+| `2>&1`  | `2>&1`      | stderr → **wherever stdout goes**  | `cmd > log 2>&1`       |
+
+#### When to use which (with examples)
+
+| Goal                                    | Use this                     |
+|-----------------------------------------|------------------------------|
+| Save normal output to a file (overwrite)| `cmd > out.txt`              |
+| **Append** instead of overwriting       | `cmd >> out.txt`             |
+| Capture **only errors**                 | `cmd 2> err.txt`             |
+| Print **your own** error/usage message  | `echo "Usage: ..." >&2`      |
+| Log **everything** (output + errors)    | `cmd > all.log 2>&1`         |
+| Log everything (shorthand)              | `cmd &> all.log`             |
+| **Silence** everything                  | `cmd &> /dev/null`           |
+| Output and errors in **separate** files | `cmd > out.txt 2> err.txt`   |
+
+```bash
+# Real result to a file, errors still visible on screen (Day 2 §4 idea):
+./3_day.sh 5 2 > result.txt
+
+# Your script sending its OWN usage message to stderr:
+echo "Usage: $0 <name>" >&2
+
+# Capture a command's full log — stdout AND stderr together:
+./deploy.sh > deploy.log 2>&1
+
+# Run a check silently, only care about pass/fail (Day 2 §5):
+if command -v nginx &> /dev/null; then echo "installed"; fi
+```
+
+#### `>&2` vs `2>&1` — mirror images
+
+Read `N>&M` as **"point stream N at stream M's destination."**
+
+- `>&2` = `1>&2` = send **stdout → stderr**. Why `echo "error" >&2` lands on the
+  error stream (used in your Day 3 script).
+- `2>&1` = send **stderr → stdout**. **Merges** errors into normal output — for
+  logging or piping both.
+
+#### ⚠️ Order matters
+
+`2>&1` copies wherever stdout points **at that moment**, so position changes
+everything:
+
+```bash
+cmd > file 2>&1     # stdout→file, THEN stderr→(same file). BOTH in file ✅
+cmd 2>&1 > file     # stderr→terminal (stdout still there), THEN stdout→file ❌
+```
+
+> ✅ Verified in real Bash: with `2>&1 > file`, the error line stays on the
+> terminal and only normal output reaches the file — the opposite of what you
+> probably wanted. Put the file redirect **first**.
+
+#### Key takeaways
+- `&` before a number = "it's a **stream**, not a filename."
+- `>` overwrites, `>>` appends.
+- `>&2` = my output → stderr; `2>&1` = errors → stdout.
+- Merge both to a file: `> file 2>&1` (or `&> file`) — **redirect order matters**.
+
 ---
 
 ## Day 3
