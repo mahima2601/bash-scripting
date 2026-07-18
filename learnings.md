@@ -2,6 +2,399 @@
 
 A running log of what I learn each day. One section per day.
 The actual code for each day lives in `N_day.sh`; this file is the *theory*.
+**Day 0** below is the foundations primer — everything worth knowing *before*
+writing your first script.
+
+---
+
+## Day 0 — Foundations (learn these before scripting)
+
+> The goal of Day 0 is the **mental model** and the **vocabulary**. You don't
+> need to master everything here — just be comfortable enough that the later
+> days make sense. Deep dives are linked to their days.
+
+### Section 1 — Shell, terminal, and Bash: what they actually are
+
+Three words people mix up:
+
+| Term         | What it is                                                         |
+|--------------|--------------------------------------------------------------------|
+| **Terminal** | The *window/app* you type into (Terminal.app, iTerm, VS Code term).|
+| **Shell**    | The *program* that reads your commands and runs them.              |
+| **Bash**     | One *specific* shell (Bourne Again SHell). Others: `zsh`, `sh`, `fish`. |
+
+Think of it like a car: the **terminal** is the windshield you look through, the
+**shell** is the engine that does the work, and **Bash** is one brand of engine.
+
+**A shell does two jobs:**
+1. **Interactive** — you type commands one at a time and it responds.
+2. **Scripting** — you put many commands in a file (`.sh`) and run them together.
+
+Bash scripting is just **writing down the same commands** you'd type by hand, so
+the computer can repeat them reliably. If you can do it in the terminal, you can
+script it.
+
+> ⚠️ macOS note: your *login* shell is `zsh`, and the `bash` on macOS is an old
+> **3.2** version. Real Linux servers (where DevOps work happens) run bash 4 or
+> 5. A few features (associative arrays — Day 53, `${var,,}` lowercasing) need
+> bash 4+. For learning, install a modern bash with `brew install bash`.
+
+### Section 2 — The filesystem and paths
+
+Linux organizes everything in a **tree** starting at `/` (the "root").
+
+```
+/                 <- root of everything
+├── home/         <- users' home directories (on macOS: /Users/)
+│   └── mahima/   <- your home, shortcut: ~
+├── etc/          <- system config files
+├── var/          <- logs, variable data (/var/log)
+├── tmp/          <- temporary files
+└── usr/          <- installed programs (/usr/bin)
+```
+
+**Two ways to name a location:**
+
+| Path type    | Starts with | Meaning                          | Example              |
+|--------------|-------------|----------------------------------|----------------------|
+| **Absolute** | `/`         | full address from root           | `/Users/mahima/a.sh` |
+| **Relative** | not `/`     | from where you *currently* are   | `scripts/a.sh`       |
+
+**Special shortcuts you'll use constantly:**
+
+| Symbol | Means                          |
+|--------|--------------------------------|
+| `~`    | your home directory            |
+| `.`    | the **current** directory      |
+| `..`   | the **parent** directory (one up) |
+| `-`    | the **previous** directory (`cd -`) |
+| `/`    | the root directory             |
+
+```bash
+cd /var/log        # absolute — go exactly there
+cd ..              # up one level
+cd ~               # home
+cd -               # back to where I just was
+pwd                # "print working directory" — where am I?
+```
+
+### Section 3 — Essential Linux commands
+
+You must be fluent with these before scripting — a script is just these
+commands stacked up.
+
+**Navigation & looking around**
+
+| Command | What it does                        | Common use          |
+|---------|-------------------------------------|---------------------|
+| `pwd`   | print current directory             | `pwd`               |
+| `ls`    | list files                          | `ls -la` (all + details) |
+| `cd`    | change directory                    | `cd /tmp`           |
+| `tree`  | show directory as a tree            | `tree -L 2`         |
+
+**Working with files & directories**
+
+| Command | What it does                        | Example                    |
+|---------|-------------------------------------|----------------------------|
+| `touch` | create an empty file / update time  | `touch app.log`            |
+| `mkdir` | make a directory                    | `mkdir -p a/b/c` (nested)  |
+| `cp`    | copy                                | `cp a.txt b.txt`           |
+| `mv`    | move **or rename**                  | `mv old.txt new.txt`       |
+| `rm`    | remove (⚠️ no undo!)                | `rm file`, `rm -r dir`     |
+| `ln -s` | symbolic link (shortcut)            | `ln -s target link`        |
+
+> ⚠️ `rm -rf` deletes recursively with **no confirmation and no trash**. Double-
+> check the path every single time. There is no undo.
+
+**Viewing file contents**
+
+| Command | What it does                             | Example              |
+|---------|------------------------------------------|----------------------|
+| `cat`   | dump whole file                          | `cat file.txt`       |
+| `less`  | scroll a file page by page (`q` to quit) | `less big.log`       |
+| `head`  | first lines (default 10)                 | `head -n 20 file`    |
+| `tail`  | last lines; `-f` follows live            | `tail -f app.log`    |
+| `wc`    | count lines/words/chars                  | `wc -l file` (lines) |
+
+**Searching & filtering** (the DevOps bread-and-butter)
+
+| Command | What it does                              | Example                    |
+|---------|-------------------------------------------|----------------------------|
+| `grep`  | find lines matching a pattern             | `grep "ERROR" app.log`     |
+| `find`  | find files by name/type/age               | `find . -name "*.sh"`      |
+| `sort`  | sort lines                                | `sort names.txt`           |
+| `uniq`  | collapse/count duplicate lines            | `sort f \| uniq -c`        |
+| `cut`   | slice columns                             | `cut -d, -f1 data.csv`     |
+| `awk`   | field-based text processing               | `awk '{print $1}' file`    |
+| `sed`   | stream editor (find/replace)              | `sed 's/a/b/g' file`       |
+
+**System & process info**
+
+| Command    | What it does                        |
+|------------|-------------------------------------|
+| `whoami`   | your username (Day 1 used this)     |
+| `date`     | current date/time                   |
+| `df -h`    | disk space, human-readable          |
+| `du -h`    | directory sizes                     |
+| `ps aux`   | running processes                   |
+| `top`      | live process monitor                |
+| `kill PID` | stop a process                      |
+| `chmod`    | change permissions (Section 4)      |
+| `man CMD`  | manual/help for a command           |
+
+> The single most useful pattern: **pipe** commands together with `|` to build
+> power from small tools — `cat access.log | grep 404 | wc -l` = "how many 404s?"
+> (Pipes explained in Section 7.)
+
+### Section 4 — File permissions (`rwx`, `chmod`)
+
+Every file has permissions for three groups of people. Run `ls -l`:
+
+```
+-rwxr-xr--  1 mahima staff  54 Jun 3 file.sh
+ └┬┘└┬┘└┬┘
+  │  │  └── others (everyone else):  r-- = read only
+  │  └───── group:                   r-x = read + execute
+  └──────── owner (you):             rwx = read + write + execute
+```
+
+Each slot is three bits — **r**ead, **w**rite, e**x**ecute:
+
+| Letter | On a file            | On a directory                  |
+|--------|----------------------|----------------------------------|
+| `r`    | read its contents    | list what's inside               |
+| `w`    | modify it            | create/delete files inside       |
+| `x`    | **run** it as a program | `cd` into it                  |
+
+**The octal (number) shortcut** — add the values in each group:
+
+| Permission | r=4 | w=2 | x=1 | Total |
+|------------|-----|-----|-----|-------|
+| `rwx`      | 4   | 2   | 1   | **7** |
+| `rw-`      | 4   | 2   | 0   | **6** |
+| `r-x`      | 4   | 0   | 1   | **5** |
+| `r--`      | 4   | 0   | 0   | **4** |
+
+So `chmod 755 file` = `rwx` for owner, `r-x` for group, `r-x` for others — the
+classic "executable script" permission.
+
+```bash
+chmod +x script.sh     # add execute (simplest, most common)
+chmod 755 script.sh    # same result via octal
+chmod 644 notes.txt    # rw-r--r-- : owner edits, others read (normal file)
+```
+
+> This is **why** `./script.sh` needs `chmod +x` first (Day 1): without the `x`
+> bit, the system refuses to run it as a program.
+
+### Section 5 — Anatomy of a shell script
+
+A script is just a text file of commands. Three things make it "a script":
+
+```bash
+#!/bin/bash          # 1. the SHEBANG — must be the VERY first line
+echo "Hello"         # 2. your commands, top to bottom
+```
+
+1. **The shebang `#!/bin/bash`** — tells the system which interpreter to use.
+   It **must** be line 1, character 1 (the kernel reads the first two bytes `#!`).
+   Putting a comment or blank line above it **breaks** it.
+2. **Make it executable** — `chmod +x script.sh` (Section 4).
+3. **Run it** — three ways (full detail in Day 1):
+
+| Command            | Runs in        | Needs `+x`? | Uses shebang? |
+|--------------------|----------------|-------------|---------------|
+| `./script.sh`      | child subshell | yes         | yes           |
+| `bash script.sh`   | child subshell | no          | no            |
+| `source script.sh` | current shell  | no          | no            |
+
+> `#` starts a **comment** — everything after it on the line is ignored (except
+> the shebang, which is special). Use comments to explain *why*, not *what*.
+
+### Section 6 — Variables and quoting
+
+```bash
+name="Mahima"        # NO spaces around = ! (name = "x" is an error)
+echo "$name"         # use $ to read it back -> Mahima
+echo "${name}"       # braces when you need a clear boundary
+```
+
+| Rule                          | Why                                            |
+|-------------------------------|------------------------------------------------|
+| No spaces around `=`          | `x = 5` is read as a *command* `x` with args    |
+| `$name` reads the value       | without `$` it's just the literal text "name"   |
+| **Always quote:** `"$name"`   | prevents word-splitting when the value has spaces |
+
+**Quoting — the #1 beginner bug (and interview topic):**
+
+| Quote     | Effect                                         | `echo` of `x="a b"` |
+|-----------|------------------------------------------------|---------------------|
+| `"..."`   | expands variables, keeps spaces intact         | `a b`               |
+| `'...'`   | **literal** — no `$` expansion at all           | `$x`                |
+| no quotes | expands **and** word-splits (danger!)           | `a b` (as 2 words)  |
+
+```bash
+x="a b"
+echo "$x"    # a b   (one argument — correct)
+echo '$x'    # $x    (single quotes = literal)
+echo $x      # a b   (but passed as TWO words — bugs!)
+```
+
+Rule of thumb: **double-quote every variable** unless you have a specific reason
+not to. (This connects to Day 2 §1 quoting and Day 3 §4 validation.)
+
+### Section 7 — Input/output: streams, redirection, pipes
+
+Every command has **three streams** (you'll see these everywhere):
+
+| # | Name   | Default | Purpose                    |
+|---|--------|---------|----------------------------|
+| 0 | stdin  | keyboard| where input comes in       |
+| 1 | stdout | screen  | normal output              |
+| 2 | stderr | screen  | errors / warnings          |
+
+**Redirection — send a stream somewhere else:**
+
+| Symbol      | Meaning                                  |
+|-------------|------------------------------------------|
+| `>`         | stdout → file (**overwrite**)            |
+| `>>`        | stdout → file (**append**)               |
+| `2>`        | stderr → file                            |
+| `&>`        | **both** stdout+stderr → file            |
+| `< file`    | feed file **into** stdin                 |
+| `2>&1`      | send stderr to wherever stdout is going  |
+
+```bash
+echo "hi" > out.txt        # write (replaces contents)
+echo "more" >> out.txt     # add to the end
+command 2> errors.txt      # capture only errors
+command &> /dev/null       # silence everything (Day 2 §5)
+```
+
+**Pipes `|` — the killer feature.** Connect one command's stdout to the next
+command's stdin, building a chain:
+
+```bash
+cat access.log | grep "404" | wc -l      # count 404 errors
+ps aux | grep nginx                       # find nginx processes
+ls -l | sort -k5 -n | tail -5             # 5 biggest files
+```
+
+This is the Unix philosophy: **small tools, each doing one thing, combined.**
+(Deep dives: streams & `>&2` in Day 2 §4, `/dev/null` in Day 2 §5.)
+
+### Section 8 — The building blocks (preview + index)
+
+These are the pieces you'll assemble in every script. Each has a full section on
+the day it's introduced — this is your **map**:
+
+**Conditionals (`if/else`)** — do something *only if* a condition holds:
+
+```bash
+if [ "$age" -ge 18 ]; then
+    echo "adult"
+elif [ "$age" -ge 13 ]; then
+    echo "teen"
+else
+    echo "child"
+fi
+```
+→ Full detail: **Day 2 §2**.
+
+**Brackets** — the confusing part, so here's the one-liner (full guide **Day 3 §7**):
+
+| Bracket   | Use for                          |
+|-----------|----------------------------------|
+| `[[ ]]`   | string/file tests (your default) |
+| `(( ))`   | number tests & math actions      |
+| `$(( ))`  | math you want the **value** of   |
+| `$( )`    | capture a command's **output**   |
+| `${ }`    | a **variable's** value           |
+
+**Arithmetic** — Bash math is **integer only** (`10/3 = 3`):
+
+```bash
+sum=$(( 5 + 3 ))       # 8
+echo $(( 10 % 3 ))     # 1 (remainder)
+```
+→ Full detail: **Day 3 §1–2**.
+
+**Loops** — repeat an action:
+
+```bash
+for i in 1 2 3; do echo "$i"; done       # for loop
+for f in *.log; do echo "$f"; done        # loop over files
+
+while [ "$n" -lt 5 ]; do                   # while loop
+    echo "$n"; n=$(( n + 1 ))
+done
+```
+→ Full detail: coming in **Day 16**.
+
+**Functions** — name a reusable block:
+
+```bash
+greet() {
+    echo "Hello, $1"     # $1 = first argument to the function
+}
+greet "Mahima"           # call it
+```
+→ Full detail: coming in **Day 19–20**.
+
+### Section 9 — Getting help & debugging
+
+You will not memorize everything — knowing **how to look things up** is the real
+skill.
+
+| Tool                | What it does                                  |
+|---------------------|-----------------------------------------------|
+| `man ls`            | full manual for a command (`q` to quit)       |
+| `ls --help`         | quick help (Linux; macOS often lacks `--help`)|
+| `type cmd`          | is it a builtin, alias, or program?           |
+| `which cmd`         | path to the program                           |
+| `help if`           | help for Bash **builtins** (`if`, `cd`, etc.) |
+
+**Debugging your scripts:**
+
+```bash
+bash -x script.sh      # TRACE: prints each line as it runs (super useful)
+bash -n script.sh      # syntax-check WITHOUT running it
+set -x                 # turn tracing on partway through a script
+set +x                 # turn it back off
+```
+
+**`shellcheck`** — a linter that catches bugs before you run. Install with
+`brew install shellcheck`, then `shellcheck script.sh`. It flags unquoted
+variables, wrong brackets, and the exact gotchas in these notes. **Use it on
+every script** — the practice bank recommends it too.
+
+### Section 10 — Strict mode (a habit to start early)
+
+Serious scripts open with this line. You'll understand each flag by Day 38, but
+start using it now:
+
+```bash
+set -euo pipefail
+```
+
+| Flag          | Effect                                                    |
+|---------------|-----------------------------------------------------------|
+| `set -e`      | exit immediately if any command fails                     |
+| `set -u`      | error on use of an **undefined** variable (catches typos) |
+| `set -o pipefail` | a pipeline fails if **any** stage fails, not just the last |
+
+Without these, a failing command is silently ignored and the script keeps going
+with bad data — the source of many real outages.
+
+#### Day 0 key takeaways
+- Terminal = window, **shell** = engine, **Bash** = one engine. A script is just
+  typed commands saved in a file.
+- Master `cd ls pwd cat grep find` and pipes `|` **before** scripting.
+- `rwx` = 4/2/1; `chmod +x` is what lets `./script.sh` run.
+- The shebang `#!/bin/bash` must be **line 1**.
+- **Quote your variables:** `"$var"`.
+- Three streams: stdin(0), stdout(1), stderr(2); redirect with `> >> 2> &>`.
+- Look things up with `man`; debug with `bash -x`; lint with `shellcheck`.
 
 ---
 
@@ -647,23 +1040,446 @@ else
 fi
 ```
 
-Breaking down the regex `^-?[0-9]+$`:
-
-| Part     | Meaning                                    |
-|----------|--------------------------------------------|
-| `^`      | start of the string                        |
-| `-?`     | an optional minus sign (for negatives)     |
-| `[0-9]+` | one or more digits                         |
-| `$`      | end of the string                          |
-
-The `^` and `$` anchors matter — without them, `12abc` would wrongly pass because
-the regex would match just the `12` part.
-
-> Note: `=~` only works inside `[[ ]]`, never inside single `[ ]`. This is one of
-> the main reasons to prefer `[[ ]]` in Bash.
+That `^-?[0-9]+$` pattern is a **regex** — see Section 5 for a full breakdown.
 
 #### Key takeaways
 - Bash arithmetic is **integer only** — `/` truncates, never rounds.
 - Empty or non-numeric variables silently become `0` — **always validate**.
 - Division by zero is a **fatal error** — guard it before dividing.
 - Send errors to stderr with `>&2` and `exit 1` (Day 2, Section 4).
+
+### Section 5 — Regex matching with `=~` and `^-?[0-9]+$`
+
+A **regex** (regular expression) is a pattern for describing what text should
+look like. In Bash you test a string against one using the `=~` operator inside
+double brackets:
+
+```bash
+if [[ "$num1" =~ ^-?[0-9]+$ ]]; then
+    echo "It's a valid integer"
+fi
+```
+
+> ⚠️ `=~` **only works inside `[[ ]]`** — never in single `[ ]`. This is one of
+> the main reasons to prefer `[[ ]]` in Bash (Day 2, Section 2).
+
+#### Breaking down `^-?[0-9]+$` piece by piece
+
+Read it left to right as a sentence: *"from the start, an optional minus sign,
+then one or more digits, then the end — and nothing else."*
+
+| Part     | Name          | Meaning                                  |
+|----------|---------------|------------------------------------------|
+| `^`      | anchor        | **start** of the string                  |
+| `-?`     | optional char | a minus sign, **zero or one** time       |
+| `[0-9]`  | character set | **any single digit** from 0 to 9         |
+| `+`      | quantifier    | the thing before it, **one or more** times |
+| `$`      | anchor        | **end** of the string                    |
+
+So `[0-9]+` together means "one or more digits" — `[0-9]` says *what*, and `+`
+says *how many*.
+
+#### Why the anchors `^` and `$` are critical
+
+Without anchors, a regex matches if the pattern appears **anywhere** inside the
+string. This is the classic beginner trap:
+
+```bash
+[[ "12abc" =~ [0-9]+ ]]        # TRUE!  ❌ matches the "12" part only
+[[ "12abc" =~ ^-?[0-9]+$ ]]    # FALSE  ✅ correct — "abc" isn't allowed
+```
+
+`^` and `$` force the pattern to describe the **entire** string, not just a
+fragment of it. **Almost always anchor your validation regexes.**
+
+#### What it accepts and rejects
+
+| Input   | Matches? | Why                                     |
+|---------|----------|-----------------------------------------|
+| `42`    | ✅       | digits only                             |
+| `-42`   | ✅       | the optional `-` is used                |
+| `0`     | ✅       | one digit is enough (`+` needs ≥ 1)     |
+| `abc`   | ❌       | not digits                              |
+| `12abc` | ❌       | anchors reject trailing text            |
+| `3.14`  | ❌       | `.` isn't in `[0-9]` — **integers only**|
+| `-`     | ❌       | `+` requires at least one digit         |
+| `` (empty) | ❌    | `+` requires at least one digit         |
+| `+5`    | ❌       | only `-` is allowed, not `+`            |
+
+Note `3.14` failing is **intentional** — Bash arithmetic is integer-only
+(Section 2), so rejecting decimals is correct here.
+
+#### The quantifiers you'll use most
+
+| Symbol | Meaning              | Example    | Matches            |
+|--------|----------------------|------------|--------------------|
+| `?`    | zero or **one**      | `-?`       | `""` or `-`        |
+| `+`    | **one** or more      | `[0-9]+`   | `5`, `42`, `1000`  |
+| `*`    | **zero** or more     | `[0-9]*`   | `""`, `5`, `42`    |
+| `{n}`  | exactly **n** times  | `[0-9]{3}` | `123` (not `12`)   |
+| `{n,m}`| between n and m      | `[0-9]{1,3}` | `1` to `999`     |
+
+> Careful: `+` vs `*` matters. `^[0-9]*$` would accept an **empty string**
+> (zero digits is "zero or more"), which is usually a bug in a validator.
+
+#### Handy character sets
+
+| Set        | Matches                          |
+|------------|----------------------------------|
+| `[0-9]`    | any digit                        |
+| `[a-z]`    | any lowercase letter             |
+| `[A-Za-z]` | any letter, either case          |
+| `[a-zA-Z0-9_]` | letters, digits, underscore  |
+| `[^0-9]`   | **NOT** a digit (`^` inside `[]` = negate) |
+| `.`        | **any** single character         |
+
+> Confusing but important: `^` means "start of string" *outside* brackets, but
+> means "**not**" *inside* brackets. `[^0-9]` = "any non-digit".
+
+#### Useful variations
+
+```bash
+# Positive integers only (no minus sign)
+[[ "$n" =~ ^[0-9]+$ ]]
+
+# Allow decimals: optional minus, digits, optional (dot + digits)
+[[ "$n" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]     # \. is a literal dot
+
+# Don't quote the regex! Quoting makes it a literal string, not a pattern
+[[ "$n" =~ "^[0-9]+$" ]]    # ❌ WRONG — looks for that exact text
+[[ "$n" =~ ^[0-9]+$ ]]      # ✅ RIGHT
+```
+
+That last one is a **big gotcha**: quoting the *variable* (`"$n"`) is required,
+but quoting the *regex* breaks it — the quotes turn the pattern into literal
+text to search for.
+
+#### Capturing parts with `BASH_REMATCH`
+
+When a regex matches, Bash stores the pieces in the `BASH_REMATCH` array — index
+`0` is the whole match, and each `( )` group gets the next index:
+
+```bash
+date_str="2026-07-17"
+if [[ "$date_str" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]]; then
+    echo "Full:  ${BASH_REMATCH[0]}"   # 2026-07-17
+    echo "Year:  ${BASH_REMATCH[1]}"   # 2026
+    echo "Month: ${BASH_REMATCH[2]}"   # 07
+    echo "Day:   ${BASH_REMATCH[3]}"   # 17
+fi
+```
+
+You'll need this for Day 32 (validating an IPv4 address).
+
+#### Key takeaways
+- `=~` works **only** inside `[[ ]]`.
+- **Anchor with `^` and `$`** or you'll match fragments (`12abc` passing as a number).
+- Quote the **variable**, never the **regex**.
+- `?` = 0-or-1, `+` = 1-or-more, `*` = 0-or-more. Prefer `+` in validators.
+- `^` outside brackets = "start"; `^` inside `[ ]` = "not".
+- `( )` groups are captured into `${BASH_REMATCH[n]}`.
+
+### Section 6 — The validation block, line by line
+
+This is the full integer-check block from the Day 3 script. It pulls together
+almost everything above, so let's read it **one line at a time**.
+
+```bash
+# Check both are integers
+if ! [[ "$num1" =~ ^-?[0-9]+$ ]] || ! [[ "$num2" =~ ^-?[0-9]+$ ]]; then
+    echo "Error: both arguments must be integers" >&2
+    exit 1
+fi
+```
+
+#### Line 1 — the condition
+
+```bash
+if ! [[ "$num1" =~ ^-?[0-9]+$ ]] || ! [[ "$num2" =~ ^-?[0-9]+$ ]]; then
+```
+
+Read it in seven small pieces:
+
+| Piece                    | Meaning                                                    |
+|--------------------------|------------------------------------------------------------|
+| `if`                     | start a conditional — run the body only if it's true       |
+| `[[ ... ]]`              | Bash's advanced test (supports regex — Day 2 §2)           |
+| `"$num1"`                | the first argument, e.g. `25` (quoted so spaces are safe)  |
+| `=~`                     | "matches the regular expression on the right"              |
+| `^-?[0-9]+$`             | the regex: start, optional `-`, one+ digits, end (§5)      |
+| `!`                      | **NOT** — flips the result                                 |
+| <code>&#124;&#124;</code>| **OR** — true if either side is true                       |
+
+Building it up:
+- `[[ "$num1" =~ ^-?[0-9]+$ ]]` → true when `num1` **is** an integer.
+- `! [[ ... ]]` → true when `num1` is **NOT** an integer.
+- `A || B` → enter the `if` when `num1` is not an integer **OR** `num2` is not an
+  integer.
+
+**Plain English:** "If *either* argument is not a valid integer, run the error
+handling below."
+
+Truth-table for the `||`:
+
+| num1 valid? | num2 valid? | `!A` | `!B` | `!A ‖ !B` | Enters `if`? |
+|-------------|-------------|------|------|-----------|--------------|
+| yes         | yes         | F    | F    | **F**     | no → do math |
+| yes         | no          | F    | T    | **T**     | yes → error  |
+| no          | yes         | T    | F    | **T**     | yes → error  |
+| no          | no          | T    | T    | **T**     | yes → error  |
+
+#### Line 2 — the error message
+
+```bash
+echo "Error: both arguments must be integers" >&2
+```
+
+`echo` prints the text; `>&2` sends it to **stderr** instead of stdout. (Full
+explanation in Day 2 §4.) The short version:
+
+| Stream | Number | Carries          |
+|--------|--------|------------------|
+| stdout | `1`    | normal results   |
+| stderr | `2`    | errors, warnings |
+
+`>&2` = "redirect this output to file descriptor **2** (stderr)." So error text
+stays out of a file/pipe that's capturing the real results.
+
+**Proof it works** — capture stdout to a file, errors to another:
+
+```bash
+$ ./3_day.sh 25 hello > out.txt 2> err.txt
+$ cat out.txt        # (empty — no real result was produced)
+$ cat err.txt
+Error: both arguments must be integers
+```
+
+The error landed in `err.txt`, **not** `out.txt` — exactly because of `>&2`.
+
+#### Line 3 — stop with a failure code
+
+```bash
+exit 1
+```
+
+Stops the script **immediately** and reports failure to the OS. By convention:
+
+| Exit code    | Meaning              |
+|--------------|----------------------|
+| `0`          | success              |
+| non-zero (`1`…) | failure / error   |
+
+This is what lets another script do `if ./3_day.sh 25 10; then ...` — it reads
+this exit code. (Ties back to Day 1: a subshell reports its result via the exit
+code.)
+
+#### Line 4 — close the block
+
+```bash
+fi
+```
+
+`fi` (`if` reversed) marks the end of the `if`. If the condition was false, Bash
+skips straight past `fi` and continues to the arithmetic below.
+
+#### Full flow with a real example
+
+`./3_day.sh 25 hello`  (so `num1=25`, `num2=hello`):
+
+1. `[[ "25" =~ ^-?[0-9]+$ ]]` → true → `! ` makes it **false**.
+2. `[[ "hello" =~ ^-?[0-9]+$ ]]` → false → `! ` makes it **true**.
+3. `false || true` → **true**, so enter the `if`.
+4. Print `Error: both arguments must be integers` to **stderr**.
+5. `exit 1` — script stops, failure code returned.
+
+Contrast `./3_day.sh -15 42` (both valid):
+
+1. `! [[ "-15" =~ ... ]]` → false (the `-?` allows the minus).
+2. `! [[ "42"  =~ ... ]]` → false.
+3. `false || false` → **false**, so **skip** the `if` and go do the math.
+
+> ✅ All of the above is verified against real Bash: `25 10` and `-15 42` pass;
+> `25 hello`, `10.5 3`, and `abc xyz` each print the error and exit `1`.
+
+### Section 7 — Which bracket to use when (the complete guide)
+
+Bash has **seven** bracket-ish constructs and they are NOT interchangeable. Here
+is the whole map, then the details.
+
+| Construct    | Name                    | Used for                          | Gives you        |
+|--------------|-------------------------|-----------------------------------|------------------|
+| `[ ... ]`    | test command (POSIX)    | conditions (old/portable)         | exit code        |
+| `[[ ... ]]`  | test keyword (Bash)     | conditions (**preferred in Bash**)| exit code        |
+| `(( ... ))`  | arithmetic evaluation   | math **as a test / action**       | exit code        |
+| `$(( ... ))` | arithmetic expansion    | math **you want the value of**    | a **number**     |
+| `$( ... )`   | command substitution    | capture a command's output        | **text** output  |
+| `( ... )`    | subshell                | group commands in a child shell   | (runs commands)  |
+| `{ ...; }`   | command grouping        | group commands in **current** shell| (runs commands) |
+| `{ }`        | brace expansion         | generate lists / sequences        | expanded words   |
+| `${ ... }`   | parameter expansion     | read/modify a variable's value    | a **value**      |
+
+#### The two-question decision guide
+
+1. **Am I testing a condition (true/false)?**
+   - Comparing **numbers** → `(( ))` with `>`, `<`, `==`
+   - Comparing **strings** or **files** → `[[ ]]` with `==`, `-z`, `-f`, `=~`
+2. **Am I producing a value to use/store?**
+   - A **number** from math → `$(( ))`
+   - **Text** from a command → `$( )`
+   - A **variable's** value → `${ }`
+
+---
+
+#### 1. `[ ... ]` — the old `test` command
+
+Works everywhere (POSIX), but it's **fragile**. It's an ordinary command, so
+unquoted variables word-split and break it:
+
+```bash
+x=""
+[ $x == "a" ]      # ERROR: "unary operator expected" (becomes [ == a ])
+y="a b"
+[ $y == "a b" ]    # ERROR: "too many arguments"
+```
+
+⚠️ **Biggest trap:** inside `[ ]`, `>` and `<` are **redirection**, not comparison:
+
+```bash
+[ 5 > 3 ]          # does NOT compare! creates a file named "3" 😱
+```
+
+Use `[ ]` only for POSIX `sh` scripts. In Bash, reach for `[[ ]]`.
+
+#### 2. `[[ ... ]]` — the Bash test keyword (**your default**)
+
+Safer and more powerful. It's a keyword, not a command, so no word-splitting:
+
+```bash
+x=""
+[[ $x == "a" ]]        # false — handles empty safely, even unquoted
+y="a b"
+[[ $y == "a b" ]]      # true  — spaces safe even unquoted
+```
+
+Supports things `[ ]` can't:
+
+```bash
+[[ "$name" == M* ]]              # wildcard/glob matching
+[[ "$num" =~ ^[0-9]+$ ]]         # regex (Section 5)
+[[ -f "$file" && -r "$file" ]]   # && and || work inside
+```
+
+⚠️ **Trap:** inside `[[ ]]`, `<` and `>` compare **strings** (ASCII order), NOT
+numbers:
+
+```bash
+[[ 10 < 9 ]]       # TRUE — because "1" comes before "9" as text! ❌
+[[ 10 -lt 9 ]]     # false — correct, -lt forces numeric compare ✅
+```
+
+So for **numbers inside `[[ ]]`**, use `-lt -gt -eq -ne -le -ge` (Day 2 §3),
+**not** `<` `>`.
+
+#### 3. `(( ... ))` — arithmetic evaluation (math as a test/action)
+
+Best way to compare **numbers**, because you get natural math symbols:
+
+```bash
+if (( num1 > num2 )); then echo "bigger"; fi   # clean numeric compare
+(( count++ ))                                    # perform an action
+(( total += 5 ))
+```
+
+⚠️ **Trap:** `(( ))` returns its result as an exit code, and **`0` is "false"**:
+
+```bash
+(( 1 ))    # exit 0 → true
+(( 0 ))    # exit 1 → FALSE!
+```
+
+This bites with `set -e`: a line like `(( count = 0 ))` "fails" (exit 1) and can
+kill a strict-mode script. Guard it: `(( count = 0 )) || true`.
+
+#### 4. `$(( ... ))` — arithmetic expansion (math you want the value of)
+
+Same math, but it **hands back the number** so you can store or print it:
+
+```bash
+sum=$(( num1 + num2 ))         # store the value
+echo "Total: $(( a * b ))"     # print the value
+```
+
+> `(( ))` vs `$(( ))`: the `$` means "**give me the value**." No `$` means
+> "**use it as a true/false test or an action**." (Day 3 §3.)
+
+#### 5. `$( ... )` — command substitution (capture output as text)
+
+Runs a command and substitutes its **text output**:
+
+```bash
+today=$(date +%F)              # today="2026-07-18"
+files=$(ls | wc -l)            # capture a count
+user=$(whoami)                 # Day 1 used this!
+```
+
+Prefer `$( )` over old backticks `` `...` `` — it nests cleanly:
+`outer=$(echo $(date))`.
+
+#### 6. `( ... )` vs `{ ...; }` — grouping commands
+
+Both group commands, but the difference is **which shell they run in** — this is
+a favorite interview question:
+
+```bash
+cd /start
+
+( cd /tmp; pwd )      # subshell: prints /tmp
+pwd                   # still /start — the cd was thrown away!
+
+{ cd /tmp; pwd; }     # current shell: prints /tmp
+pwd                   # now /tmp — the cd STUCK
+```
+
+- `( )` = **subshell** (child). Changes (`cd`, variables) vanish when it ends.
+  Great for "do this without disturbing my current shell." (Day 1 subshell idea.)
+- `{ }` = **same shell**. Changes persist. Note the required **spaces inside** and
+  the **`;` before `}`**.
+
+#### 7. `{ }` — brace expansion (generate lists) & `${ }` — variables
+
+Confusingly, bare `{ }` with **no `$`** generates lists *before* the command runs:
+
+```bash
+echo {1..5}            # 1 2 3 4 5
+echo {a,c,e}           # a c e
+touch file{1,2,3}.txt  # makes file1.txt file2.txt file3.txt
+cp app.conf{,.bak}     # cp app.conf app.conf.bak  (handy trick!)
+```
+
+And `${ }` (**with** `$`) is parameter expansion — reading/reshaping a variable:
+
+```bash
+name="report.txt"
+echo "${name}"          # report.txt
+echo "${name%.txt}"     # report   (strip suffix — Day 27)
+echo "${#name}"         # 10       (length)
+echo "${name:-default}" # use "default" if name is empty
+```
+
+#### Cheat-sheet: the mistakes to never make
+
+| You wrote                | Problem                              | Use instead            |
+|--------------------------|--------------------------------------|------------------------|
+| `[ 5 > 3 ]`              | `>` redirects, makes a file `3`      | `(( 5 > 3 ))`          |
+| `[[ 10 < 9 ]]` for nums  | string compare (`10` < `9`)          | `(( 10 < 9 ))` or `-lt`|
+| `[ $x == a ]` (empty x)  | word-split → syntax error            | `[[ $x == a ]]`        |
+| `if $(( a > b ))`        | `$(( ))` returns a value, not a test | `if (( a > b ))`       |
+| `` x=`cmd` ``            | backticks don't nest well            | `x=$(cmd)`             |
+| `( cd dir )` expecting cd to stick | subshell throws it away    | `{ cd dir; }` or plain `cd` |
+
+#### Golden rules
+- **Numbers** → `(( ))` (test) or `$(( ))` (value).
+- **Strings / files** → `[[ ]]`.
+- **Capture output** → `$( )`.
+- **Variable's value** → `${ }`.
+- Avoid `[ ]` in Bash; avoid `<`/`>` for numeric compares.
