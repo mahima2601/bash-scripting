@@ -4,24 +4,15 @@
 #(e.g. nginx) is active, using systemctl, and prints 
 #a clear up/down message. Concept: exit codes from real commands.Hint: systemctl is-active --quiet nginx.
 
-case "$1" in 
-    start)
-        echo "starting the service..."
-        ;;
-    stop)
-        echo "stopping the service..."
-        ;;
-    restart)
-        echo "restarting the service..."
-        ;;
-    status)
-        echo "showing service status..."
-        ;;
-    *)
-        echo "Usage: $0 {start|stop|restart|status}" >&2
-        exit 1
-        ;;
-    esac
+# systemctl status nginx
+
+
+if systemctl is-active nginx &>/dev/null; then
+    echo "service is up"
+else
+    echo "service is down"
+
+fi
 
 
 
