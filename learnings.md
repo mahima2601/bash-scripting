@@ -604,6 +604,9 @@ variable is empty.
 - `-r` — true if the path is **readable**.
 - `-w` — true if the path is **writable**.
 - `-x` — true if the path is **executable** (mirrors the `x` bit, Day 0 §4).
+- `-L` — true if the path is a **symlink** (also `-h`). Unlike the others it
+  checks the **link itself** and does **not** follow it to the target (Day 7).
+- `-s` — true if the file exists and is **not empty** (size > 0).
 
 > These are exactly what **Day 4** needs — "does it exist? (`-d`) is it readable?
 > (`-r`) writable? (`-w`)". Always quote the path: `[[ -d "$path" ]]`, since a
@@ -1854,3 +1857,171 @@ $ date -r 1784406222 +"%F %T"   # 2026-07-19 01:53:42
 - **Capture** it with `$(date ...)` — that's the Day 6 concept, command substitution.
 - `-u` = UTC (servers), quote formats containing spaces.
 - Date **math** differs: macOS `date -v-1d`, Linux `date -d "yesterday"`.
+
+---
+
+## Day 7
+
+### Section 1 — The two kinds of links: symbolic & hard
+
+Linux has **two** ways to make one file reachable under another name. They look
+similar but work very differently. (The file-test operators used here — `-e`,
+`-f`, `-d`, `-L`, `-s` — live in Day 2 §3.)
+
+#### 1. Symbolic links (symlinks / "soft links")
+
+A **symlink** is a tiny file whose only content is **a path** pointing to another
+file or directory — the Linux version of a **shortcut** (Windows) or **alias**
+(macOS). Open the link and the system transparently redirects you to the
+**target**.
+
+```
+softlink  ──points to──►  /real/path/to/file.txt
+```
+
+Create it with **`ln -s TARGET LINKNAME`** (`-s` = symbolic). `ls -l` shows a
+leading `l` and the arrow:
+
+```bash
+$ ln -s realfile.txt softlink.txt
+$ ls -l softlink.txt
+lrwxr-xr-x  1 you staff  12 Jul 19 softlink.txt -> realfile.txt
+^                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+l = it's a link                    points here
+```
+
+Properties:
+- Stores a **path**, not the data — so most tools and tests **follow** it to the
+  target (`-f`, `-d`, `-e`), *except* **`-L`** (also `-h`), which checks the link
+  **itself**. This "follow vs. don't-follow" split is what causes the Day 7
+  ordering bug (§3).
+- Can point **across filesystems/disks**, and can link **directories**.
+- **Breaks** if the target is moved or deleted — a "dangling" link (see §2).
+
+#### 2. Hard links
+
+A **hard link** isn't a pointer at all — it's a **second name for the exact same
+data**. Every file's real bytes live in an *inode*; a hard link is another
+directory entry pointing at that **same inode**, so both names are equal owners
+of the data.
+
+Create it with **`ln TARGET LINKNAME`** (no `-s`). `ls -li` shows both names
+sharing **one inode number** (first column) and a link count of 2 — verified:
+
+```bash
+$ ln original.txt hardlink.txt
+$ ls -li
+48081761 -rw-r--r--  2 you staff  17 original.txt   # same inode ↓, link count 2
+48081761 -rw-r--r--  2 you staff  17 hardlink.txt
+```
+
+Properties:
+- Shares the **same inode/data** — a change through one name shows in the other.
+- **Survives deletion** of the original name: after `rm original.txt`,
+  `hardlink.txt` still holds the content (the data lives until *every* name is
+  gone). Verified.
+- Must be on the **same filesystem**, and normally **can't** link a directory.
+
+#### Symlink vs hard link at a glance
+
+| Aspect              | Symbolic (soft) link          | Hard link                 |
+|---------------------|-------------------------------|---------------------------|
+| Stores              | a **path** to the target      | the **same inode** (data) |
+| Create              | `ln -s target link`           | `ln target link`          |
+| `ls -l` shows       | `link -> target`, leading `l` | a normal-looking file     |
+| Cross-filesystem?   | **yes**                       | no                        |
+| Link a directory?   | **yes**                       | no (normally)             |
+| Target deleted →    | link **breaks** (dangling)    | data **survives**         |
+
+Symlinks are everywhere in DevOps; hard links mostly show up in backup snapshots
+and de-duplication.
+
+### Section 2 — Why symlinks are used
+
+Symlinks give you a **stable name that can point at a changing thing**:
+
+- **Zero-downtime deploys (the classic):** `/app/current -> /app/releases/2026-07-19`.
+  Deploy into a new dated folder, then just **repoint the link** — instant switch,
+  and rollback = point it back. (How Capistrano-style deploys work.)
+- **Shared libraries:** `libssl.so -> libssl.so.1.1` — programs use the stable
+  name while the real versioned file changes on upgrade.
+- **Enable/disable configs:** nginx's `sites-enabled/site -> sites-available/site`
+  — link it to enable, delete the link to disable; the real config stays put.
+- **Dotfiles in git:** `~/.bashrc -> ~/dotfiles/bashrc` — configs live in a repo
+  but still sit where the system expects them.
+
+#### The dangling-link gotcha
+
+A symlink only stores a *path*, so if the target moves or is deleted the link
+still exists but points at nothing:
+
+```bash
+$ ls -l broken_link
+lrwxr-xr-x  broken_link -> /nope/gone.txt   # link is fine...
+$ cat broken_link
+cat: broken_link: No such file or directory  # ...target is gone
+```
+
+For a broken link: `-L` is **true** (still a symlink) but `-e` is **false**
+(target missing) — a handy pair to detect them.
+
+> Contrast: a **hard link** (`ln` with **no** `-s`) is a second *name* for the
+> same underlying data, not a path pointer, so it doesn't break if the original
+> name is removed. Symlinks are far more common.
+
+### Section 3 — The Day 7 solution + the ordering bug
+
+Here's the version you wrote:
+
+```bash
+if [[ -f "$path" ]]; then
+    echo "it's regular file"
+elif [[ -d "$path" ]]; then
+    echo "it's directory"
+elif [[ -L "$path" ]]; then       # ⚠️ too late!
+    echo "it's a symlink"
+else
+    echo "file doesn't exist"
+fi
+```
+
+**The bug:** because `-f` follows a symlink to its target, a symlink pointing at
+a real file matches `-f` **first** and is reported as `"regular file"`. Your
+`-L` branch only ever runs for **broken** symlinks. Verified:
+
+| Path                    | Your order (`-f` first) | Correct (`-L` first) |
+|-------------------------|-------------------------|----------------------|
+| a regular file          | regular file ✅         | regular file ✅      |
+| a directory             | directory ✅            | directory ✅         |
+| **symlink → real file** | **regular file ❌**     | **symlink ✅**       |
+| broken symlink          | symlink ✅              | symlink ✅           |
+
+**The fix — check `-L` first**, since it's the only test that doesn't follow the
+link:
+
+```bash
+#!/bin/bash
+path=$1
+
+if [[ -L "$path" ]]; then          # check the LINK before following it
+    echo "it's a symlink"
+elif [[ -f "$path" ]]; then
+    echo "it's a regular file"
+elif [[ -d "$path" ]]; then
+    echo "it's a directory"
+elif [[ -e "$path" ]]; then        # exists but some other type (socket, etc.)
+    echo "it exists (special file)"
+else
+    echo "file doesn't exist"
+fi
+```
+
+Order matters whenever tests can overlap: put the **most specific / non-following**
+check (`-L`) first, general ones (`-e`) last. (File tests: Day 2 §3; permissions
+behind them: Day 0 §4.)
+
+#### Key takeaways
+- `-f`/`-d`/`-e` **follow** symlinks; `-L` inspects the **link itself**.
+- Therefore check **`-L` first**, or symlinks-to-files get mislabeled.
+- Broken symlink = `-L` true **and** `-e` false.
+- `ln -s TARGET LINK` makes one; `ls -l` shows `link -> target` with a leading `l`.
