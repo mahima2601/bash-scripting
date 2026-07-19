@@ -1591,6 +1591,58 @@ echo "${name:-default}" # use "default" if name is empty
 - **Variable's value** → `${ }`.
 - Avoid `[ ]` in Bash; avoid `<`/`>` for numeric compares.
 
+### Section 8 — Counters & incrementing (Python `+= 1` in Bash)
+
+A **counter** is just a number you bump up as you loop. In Python you'd write
+`counter = 1` then `counter += 1`; Bash is the same idea with slightly different
+syntax (the `++`/`+=` operators from §1).
+
+| Python              | Bash                     | Notes                          |
+|---------------------|--------------------------|--------------------------------|
+| `counter = 1`       | `counter=1`              | **no spaces** around `=`, no `$` |
+| `counter += 1`      | `(( counter += 1 ))`     | closest match                  |
+| `counter += 1`      | `(( counter++ ))`        | shorthand for +1               |
+| `counter = counter + 1` | `counter=$(( counter + 1 ))` | explicit form            |
+
+Remember: **assign** with no `$` (`counter=1`), **read** with `$`
+(`echo "$counter"`), and do the **math** inside `(( ))` or `$(( ))` — a bare
+`counter = counter + 1` doesn't do arithmetic (§3).
+
+#### The counter-in-a-loop pattern (used in Day 10)
+
+```bash
+counter=1
+for arg in "$@"; do
+    echo "$counter: $arg"
+    (( counter++ ))
+done
+# ./script.sh foo bar baz  ->  1: foo / 2: bar / 3: baz
+```
+
+#### ⚠️ The `(( i++ ))` + `set -e` gotcha
+
+`(( i++ ))` returns an **exit code based on the value *before* the increment**.
+So when `i` is `0`, `(( i++ ))` "returns" the old value `0` → treated as
+**false** → exit code `1`. On its own that's harmless, but under strict mode
+(`set -e`, Day 0 §10) that non-zero exit can **abort the script**:
+
+```bash
+i=0
+(( i++ ))          # i becomes 1, but the command exits 1 → set -e would quit here
+```
+
+Safe forms that always return success:
+
+```bash
+(( i += 1 ))       # compound assignment — returns 0
+i=$(( i + 1 ))     # explicit — returns 0
+(( ++i ))          # PRE-increment — returns the NEW value (1 = success)
+```
+
+> Rule of thumb: quick scripts, `(( i++ ))` is fine (and everyone uses it). In
+> strict-mode production scripts, prefer `(( i += 1 ))` or `i=$(( i + 1 ))`. If
+> your counter starts at `1` (like Day 10), `(( i++ ))` is safe anyway.
+
 ---
 
 ## Day 4
@@ -2025,3 +2077,189 @@ behind them: Day 0 §4.)
 - Therefore check **`-L` first**, or symlinks-to-files get mislabeled.
 - Broken symlink = `-L` true **and** `-e` false.
 - `ln -s TARGET LINK` makes one; `ls -l` shows `link -> target` with a leading `l`.
+
+---
+
+## Day 9
+
+### Section 1 — The `id` command & command-exit-status conditionals
+
+`id` looks a user up in the system's **account database** and prints their
+numeric IDs and group memberships:
+
+```bash
+$ id
+uid=501(admin) gid=20(staff) groups=20(staff),80(admin),...
+$ id root
+uid=0(root) gid=0(wheel) groups=0(wheel),...
+```
+
+Handy variants (pull out just one piece):
+
+| Command   | Prints                        | Example  |
+|-----------|-------------------------------|----------|
+| `id`      | everything for the current user | `uid=501(admin)...` |
+| `id NAME` | everything for that user      | `id root`   |
+| `id -u`   | just the **UID** (number)     | `501`    |
+| `id -un`  | just the **username**         | `admin`  |
+| `id -g`   | primary **group ID**          | `20`     |
+| `id -gn`  | primary **group name**        | `staff`  |
+| `id -Gn`  | **all** group names           | `staff everyone ...` |
+
+#### Why `id` is used to check if a user exists
+
+The **whole trick** of Day 9 is `id`'s **exit code**:
+
+- User **exists** → `id` prints their info and exits **`0`** (success).
+- User **missing** → `id` prints `no such user` to stderr and exits **non-zero**.
+
+So you drop the command straight into an `if` — no `[[ ]]` needed — and silence
+its output (Day 2 §5) because you only care about success/failure, not the text:
+
+```bash
+if id "$user" &>/dev/null; then
+    echo "user exists"
+else
+    echo "user does not exist"
+fi
+```
+
+This is the Day 9 concept: **a command's exit status IS the condition.** `0` =
+true/success, non-zero = false/failure. (Contrast: `[[ ]]` is itself just a
+command that exits 0/1.)
+
+> Why `id` and not `grep /etc/passwd`? `id` consults **all** account sources (the
+> local file *and* network directories like LDAP/Active Directory), so it finds
+> users that aren't in the local file. On Linux, `getent passwd "$user"` is
+> another exit-code-friendly way that also queries those network sources.
+
+### Section 2 — Where Linux users live: `/etc/passwd`
+
+Every account on a Linux system has a line in **`/etc/passwd`**. It's a plain
+text file, **readable by everyone** (many programs need to map UID numbers to
+names). Each line has **7 colon-separated fields**:
+
+```
+mahima:x:1000:1000:Mahima K:/home/mahima:/bin/bash
+   │   │   │    │      │          │           │
+   │   │   │    │      │          │           └─ 7. login shell
+   │   │   │    │      │          └───────────── 6. home directory
+   │   │   │    │      └──────────────────────── 5. GECOS (full name/comment)
+   │   │   │    └─────────────────────────────── 4. primary group ID (GID)
+   │   │   └──────────────────────────────────── 3. user ID (UID)
+   │   └──────────────────────────────────────── 2. password placeholder
+   └──────────────────────────────────────────── 1. username
+```
+
+| # | Field    | Meaning                                                      |
+|---|----------|--------------------------------------------------------------|
+| 1 | username | login name                                                   |
+| 2 | password | just **`x`** = "the real hash lives in `/etc/shadow`" (§3)    |
+| 3 | UID      | numeric user ID — **`0` = root**, 1–999 = system, 1000+ = people |
+| 4 | GID      | numeric primary group ID                                     |
+| 5 | GECOS    | comment: full name, phone, etc.                              |
+| 6 | home     | home directory (`/home/mahima`)                              |
+| 7 | shell    | login shell; **`/usr/sbin/nologin`** or `/bin/false` = can't log in |
+
+- **UID 0 is root** — that's what actually defines the superuser, not the name.
+- Service accounts (nginx, postgres) use `nologin` as the shell so nobody can log
+  in as them — a security practice.
+
+```bash
+grep "^mahima:" /etc/passwd     # look up one user's line
+cut -d: -f1 /etc/passwd         # list all usernames (field 1, ":" separator)
+```
+
+> ⚠️ **macOS difference (your machine):** `/etc/passwd` exists but is only used in
+> single-user mode — it lists a handful of system accounts (`root`, `nobody`).
+> Real users live in **Open Directory**; list them with `dscl . -list /Users`.
+> `id` still works normally. On Linux servers, `/etc/passwd` is the real thing.
+
+### Section 3 — Where passwords live: `/etc/shadow`
+
+Notice field 2 of `/etc/passwd` is just `x`, not the actual password. The real
+**hashed passwords** live in **`/etc/shadow`** — and this is a deliberate
+security split:
+
+- `/etc/passwd` **must be world-readable** (programs map UIDs↔names constantly).
+- If password hashes sat in that readable file, **any user could copy them and
+  crack them offline**. So the hashes were moved to `/etc/shadow`, which is
+  **readable only by root** (`-rw-r----- root shadow`).
+
+`/etc/shadow` has **9 colon-separated fields** (most are password-aging policy):
+
+```
+mahima:$6$Xy9z$abc123...:19700:0:99999:7:::
+```
+
+| # | Field           | Meaning                                              |
+|---|-----------------|------------------------------------------------------|
+| 1 | username        | matches `/etc/passwd`                                 |
+| 2 | **hashed password** | the algorithm + salt + hash (see below)          |
+| 3 | last change     | days since 1970 the password was last changed        |
+| 4 | min age         | min days before it *can* be changed again            |
+| 5 | max age         | max days before it *must* be changed (aging)         |
+| 6 | warn            | days of warning before expiry                        |
+| 7 | inactive        | grace days after expiry before the account locks     |
+| 8 | expire          | date (days since 1970) the account fully expires     |
+| 9 | reserved        | unused                                               |
+
+The **hash field** (field 2) encodes the algorithm as `$id$salt$hash`:
+
+| Value        | Meaning                                     |
+|--------------|---------------------------------------------|
+| `$6$...`     | SHA-512 hash (common modern default)        |
+| `$y$...`     | yescrypt (newer default on some distros)    |
+| `*` or `!`   | **login disabled / no valid password**      |
+| `!` prefix   | account **locked** (e.g. `!$6$...`)         |
+| (empty)      | **no password** — dangerous                 |
+
+- Passwords are **hashed, not encrypted** — the system never stores the real
+  password, only a one-way hash it re-computes at login to compare.
+- You never edit `/etc/shadow` by hand — use `passwd`, `chage`, `usermod`.
+
+> ⚠️ **macOS difference:** there is **no `/etc/shadow`** on macOS — password data
+> is kept in **Open Directory** (`/var/db/dslocal/...`), managed via `dscl` /
+> `passwd`. `/etc/shadow` is a **Linux** concept, which is what matters for DevOps.
+
+### Section 4 — The Day 9 solution
+
+```bash
+#!/bin/bash
+user=$1
+
+# 1. Require exactly one argument
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <username>" >&2
+    exit 1
+fi
+
+# 2. Sanity-check the username format (defensive; id would also reject junk)
+if ! [[ $user =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+    echo "Error: '$user' is not a valid username" >&2
+    exit 1
+fi
+
+# 3. The real check — id's EXIT CODE tells us if the user exists
+if id "$user" &>/dev/null; then
+    echo "user exists"
+else
+    echo "user does not exist"
+fi
+```
+
+- The `id ... &>/dev/null` line is the heart of it — command exit status as the
+  condition (§1), output silenced with `&>/dev/null` (Day 2 §5).
+- Errors go to **stderr** (`>&2`) with `exit 1` (Day 2 §4).
+- Username regex `^[a-zA-Z_][a-zA-Z0-9_-]*$`: start with a letter/underscore, then
+  letters/digits/`_`/`-` — real usernames don't start with a digit or `-`.
+
+#### Key takeaways
+- `id NAME` → exit `0` if the user exists, non-zero if not; use it **as** the `if`
+  condition, silenced with `&>/dev/null`.
+- `/etc/passwd` = the user list (7 fields, world-readable); **UID 0 = root**;
+  field 2 is just `x`.
+- `/etc/shadow` = the password **hashes** (root-only), split off from passwd for
+  security; hashes are one-way, formatted `$id$salt$hash`.
+- macOS uses **Open Directory** instead of these files — `id` works, but the files
+  differ; Linux is the DevOps target.
