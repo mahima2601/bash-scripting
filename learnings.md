@@ -2263,3 +2263,139 @@ fi
   security; hashes are one-way, formatted `$id$salt$hash`.
 - macOS uses **Open Directory** instead of these files — `id` works, but the files
   differ; Linux is the DevOps target.
+
+---
+
+## Day 11
+
+### Section 1 — The `case` statement: syntax & anatomy
+
+`case` matches **one value against several patterns** — a cleaner alternative to a
+long `if/elif/elif/else` when you're checking the *same* variable against many
+fixed options.
+
+```bash
+case "$variable" in
+    pattern1)
+        commands
+        ;;
+    pattern2|pattern3)      # | means OR
+        commands
+        ;;
+    *)                      # catch-all (like else)
+        commands
+        ;;
+esac
+```
+
+| Piece            | Meaning                                                      |
+|------------------|-------------------------------------------------------------|
+| `case "$x" in`   | start; match `$x` against the patterns below                |
+| `pattern)`       | a branch — ends with a single `)`                           |
+| `;;`             | **ends each branch** (double semicolon — easy to forget!)   |
+| `a\|b)`          | `\|` = **OR**: match `a` *or* `b`                           |
+| `*)`             | **catch-all** default, matches anything (put it **last**)   |
+| `esac`           | closes the block (`case` spelled backwards, like `if`/`fi`) |
+
+> Always quote the subject: `case "$1" in`. And the `*)` branch should come
+> **last**, because `case` uses the **first** pattern that matches.
+
+### Section 2 — Pattern matching power
+
+`case` patterns aren't plain strings — they're **globs** (the same wildcards as
+filenames, Day 0 §2), which makes `case` far more powerful than it first looks:
+
+| Pattern       | Matches                                    |
+|---------------|--------------------------------------------|
+| `start`       | exactly `start`                            |
+| `a\|b\|c`     | `a`, `b`, or `c`                           |
+| `*.txt`       | anything ending in `.txt`                  |
+| `*.jpg\|*.png`| any image (combine glob + OR)              |
+| `[Yy]`        | `Y` or `y` (a character set)               |
+| `[Yy][Ee][Ss]`| `yes` in any capitalization                |
+| `?`           | exactly one character                      |
+| `*`           | anything (the catch-all)                   |
+
+Verified examples:
+
+```bash
+case "$file" in
+    *.txt)        echo "text file" ;;
+    *.jpg|*.png)  echo "image" ;;
+    *)            echo "other" ;;
+esac
+
+# case-insensitive yes/no
+case "$answer" in
+    [Yy]|[Yy][Ee][Ss]) echo "YES" ;;
+    [Nn]|[Nn][Oo])     echo "NO"  ;;
+    *)                 echo "unclear" ;;
+esac
+```
+
+### Section 3 — The Day 11 solution (init-script pattern)
+
+Task: accept `start|stop|restart|status` and print what it would do; anything
+else prints usage.
+
+```bash
+#!/bin/bash
+
+case "$1" in
+    start)
+        echo "Starting the service..."
+        ;;
+    stop)
+        echo "Stopping the service..."
+        ;;
+    restart)
+        echo "Restarting the service..."
+        ;;
+    status)
+        echo "Showing service status..."
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}" >&2
+        exit 1
+        ;;
+esac
+```
+
+Two things worth noticing:
+
+1. **No-argument is handled for free.** With no argument, `$1` is empty, which
+   matches none of the four patterns → falls to `*)` → usage + `exit 1`. No
+   separate `$#` check needed. (Verified: no arg → usage, exit 1.)
+2. **Errors → stderr + `exit 1`** in the `*)` branch — the habits from Days 8–9.
+
+> Real-world tie-in: this is the exact shape of `/etc/init.d/` service scripts,
+> and what `systemctl start|stop|restart|status nginx` maps to underneath. The
+> hint "mirrors init-script structure" is literal.
+
+### Section 4 — `case` vs `if/elif`, and fall-through
+
+**Why `case` over `if/elif` here?** You *could* write
+`if [[ "$1" == "start" ]]; then ... elif [[ "$1" == "stop" ]] ...`, but `case` is
+less repetitive, reads top-to-bottom like a table, and supports glob patterns.
+Reach for `case` when matching **one** variable against **many fixed values**;
+reach for `if` when conditions are **different questions** (`-f`, `-gt`, `&&`).
+
+**Branch terminators** — `;;` is what you'll use 99% of the time, but there are
+two fall-through variants:
+
+| Ender | Behavior                                              | Bash version |
+|-------|------------------------------------------------------|--------------|
+| `;;`  | end the branch, **skip** the rest (normal)           | all          |
+| `;&`  | **fall through** and run the next branch unconditionally | **bash 4+** |
+| `;;&` | continue **testing** the remaining patterns          | **bash 4+**  |
+
+> ⚠️ `;&` and `;;&` **do not work on your Mac's bash 3.2** — they throw a syntax
+> error (verified). They're fine on Linux servers (bash 4/5). Stick to `;;` for
+> portable scripts; you'll rarely need the others.
+
+#### Key takeaways
+- `case "$x" in … esac`; each branch ends with **`;;`**; `*)` is the catch-all,
+  placed **last**.
+- Patterns are **globs** — `*.txt`, `[Yy]`, `a|b` — not just literal strings.
+- First matching pattern wins, so order from **specific → general**.
+- `case` shines for one-variable-many-values (menus, subcommands, init scripts).

@@ -5,7 +5,7 @@
 #(e.g. 1: foo). Concept: iterating positional params. Hint: $@, $#, a counter.
 
 counter=1
-for i in $@; do
+for i in "$@"; do
     echo "$counter: $i"
     ((counter++))
 
