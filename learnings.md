@@ -3915,3 +3915,88 @@ exit 0
 - Anchor with `^...$`; escape literal dots `\.`; don't quote the regex.
 - `10#$n` forces base-10 so leading-zero octets don't trigger the octal trap.
 
+---
+
+## Day 33 — Breaking a total into units (`Xh Ym Zs`)
+
+> Day 33 converts a number of seconds into `Xh Ym Zs`. The reusable idea is the
+> **divmod pattern**: split a big total into named units using **integer division
+> `/`** (how many whole units) and **modulo `%`** (what's left over). Concepts from
+> Day 3 §1–2 applied inside a function (§2).
+
+### Section 1 — The divmod pattern
+
+To break a total into units you repeatedly ask two questions:
+- **`total / size`** → how many **whole** units fit? (integer division)
+- **`total % size`** → what's **left over** after removing them? (modulo)
+
+For seconds → hours/minutes/seconds (1h = 3600s, 1m = 60s):
+
+| Unit | How many whole | What's left for the next unit |
+|------|----------------|-------------------------------|
+| hours   | `total / 3600`        | `total % 3600` |
+| minutes | `(total % 3600) / 60` | `total % 60`   |
+| seconds | `total % 60`          | —              |
+
+Walk `3661` seconds through it:
+- hours   = `3661 / 3600` = **1**, leftover `3661 % 3600` = 61
+- minutes = `61 / 60`     = **1**, leftover `61 % 60` = 1
+- seconds = `3661 % 60`   = **1** → `1h 1m 1s` ✅
+
+> Remember: Bash `/` is **integer** division and `%` is the remainder (Day 3 §2).
+> The same divmod idea converts bytes → KB/MB/GB, or a total into days/hours/etc.
+
+### Section 2 — The math, compactly
+
+```bash
+hours=$((   total / 3600 ))          # whole hours
+minutes=$(( (total % 3600) / 60 ))   # remaining seconds → whole minutes
+seconds=$(( total % 60 ))            # remaining seconds
+```
+- `total % 3600` = seconds left after removing whole hours; `/ 60` turns that into
+  minutes.
+- `total % 60` gives the final seconds directly (any full minute is a multiple of
+  60, so the remainder mod 60 is what's left).
+
+### Section 3 — The full Day 33 solution
+
+```bash
+#!/bin/bash
+
+# Convert a number of seconds into "Xh Ym Zs".
+format_duration() {
+    local total=$1
+    local hours=$((   total / 3600 ))
+    local minutes=$(( (total % 3600) / 60 ))
+    local seconds=$(( total % 60 ))
+    echo "${hours}h ${minutes}m ${seconds}s"
+}
+
+# validate: exactly one non-negative integer
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <seconds>" >&2
+    exit 1
+fi
+if ! [[ $1 =~ ^[0-9]+$ ]]; then
+    echo "Error: seconds must be a non-negative integer" >&2
+    exit 1
+fi
+
+format_duration "$1"
+```
+> Verified: `0`→`0h 0m 0s`, `90`→`0h 1m 30s`, `3661`→`1h 1m 1s`, `7325`→`2h 2m 5s`,
+> `90061`→`25h 1m 1s` (hours can exceed 24 — it's a duration, not a clock).
+
+- **`local`** the intermediate variables so they don't leak (§2).
+- The function `echo`s its result, so a caller can **capture** it:
+  `uptime_str=$(format_duration 7325)` (§2 "return data via echo").
+- Validate as a **non-negative** integer (`^[0-9]+$`, no `-?`) — negative seconds
+  make no sense for a duration (contrast Day 3, which allowed negatives).
+
+#### Key takeaways
+- **Divmod pattern:** `total / size` = whole units, `total % size` = remainder for
+  the next unit. Repeat down the units.
+- Seconds → h/m/s: `/3600`, `(%3600)/60`, `%60`.
+- Put it in a **function** that `echo`s the string so callers can capture it.
+- Validate as `^[0-9]+$` (non-negative); `local` the working variables.
+
