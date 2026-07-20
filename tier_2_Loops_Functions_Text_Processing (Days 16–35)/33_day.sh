@@ -12,3 +12,5 @@ format_duration() {
     local seconds=$(( total % 60 ))
     echo "${hours}h ${minutes}m ${seconds}s"
 }
+
+format_duration "$1"      # ← call the function, passing the script's $1
