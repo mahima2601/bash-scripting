@@ -1,9 +1,12 @@
 #!/bin/bash
 
-# Day 23. Extract all unique IP addresses from a web server 
-#access log and print them sorted by frequency 
-#(most frequent first). Concept: awk/grep + sort + uniq -c. Hint: sort | uniq -c | sort -rn
+# Day 28. Loop over all running Kubernetes namespaces 
+#(kubectl get ns) and print the pod count in each. 
+#Concept: looping over command output, parsing. Hint: careful with the header row.
 
+#!/bin/bash
 
-file=$1
-echo "$(awk '{print $1}' "$file" | sort | uniq -c | sort -nr)"
+for ns in $(kubectl get ns --no-headers | awk '{print $1}'); do
+    count=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | wc -l)
+    echo "$ns: $count pods"
+done

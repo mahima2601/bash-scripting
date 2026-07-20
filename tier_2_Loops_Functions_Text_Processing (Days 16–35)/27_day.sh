@@ -12,6 +12,7 @@ path_info () {
     local file="${path##*/}"
     local name="${file%.*}"
     local extension="${file##*.}"
+    echo "dir=$dir file=$file name=$name extension=$extension"
 
 }
-echo "$dir $file $name $extension"
+path_info "/var/log/nginx/access.log" 

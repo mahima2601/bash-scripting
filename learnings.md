@@ -2421,8 +2421,8 @@ while (( i <= 10 )); do
 done
 ```
 
-`while` is also how you read a file line by line (Section 9) and how you build
-retry loops (Day 29).
+`while` is also how you read a file line by line (Section 8) and how you build
+retry loops (see **Retry loops** below).
 
 #### `until` — loop *until* a condition becomes true (rarely used)
 
@@ -2442,6 +2442,81 @@ until (( i > 10 )); do echo "$i"; (( i++ )); done   # opposite of while
 > `.log` files, bash leaves the pattern **literal**, so `f` becomes the string
 > `*.log`. Always guard: `[[ -e "$f" ]] || continue` inside the loop, or set
 > `shopt -s nullglob` so a no-match expands to nothing.
+
+#### Retry loops — try a command until it succeeds (Day 29)
+
+A **retry loop** runs a command that might fail *temporarily* and tries again a
+few times before giving up — waiting for a service to start, tolerating a network
+blip, polling until a resource is ready. It's just a counted loop plus "run the
+command, stop on success, pause between tries."
+
+| Part | Code | Purpose |
+|------|------|---------|
+| the loop | `for attempt in $(seq 1 "$N")` | try at most N times |
+| the attempt | `if "$@"; then …` | run the command; **exit 0 = success** |
+| success | `exit 0` (or `break`) | stop the moment it works |
+| the pause | `sleep 2` | wait between attempts |
+| give-up | `exit 1` after the loop | all N attempts failed |
+
+The heart is **using the command's exit code as the condition** (like `id` in
+Day 9, or a function in §2): `if "$@"` succeeds when the command returns 0.
+
+Make it retry **any** command by taking the count as `$1`, `shift`-ing it off, and
+letting `"$@"` be the command + its args:
+
+```bash
+#!/bin/bash
+# Retry a command up to N times, 2s apart, stop on first success.
+
+# 1. Need an attempt count AND a command
+if [[ $# -lt 2 ]]; then
+    echo "Usage: $0 <max-attempts> <command...>" >&2
+    exit 1
+fi
+
+max_attempts=$1
+shift                          # "$@" is now the command + its args
+
+# 2. Validate the count (≥1, no leading zeros)
+if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: max-attempts must be a positive integer" >&2
+    exit 1
+fi
+
+# 3. The retry loop
+for attempt in $(seq 1 "$max_attempts"); do
+    if "$@"; then                                   # exit 0 = success
+        echo "Succeeded on attempt $attempt"
+        exit 0
+    fi
+    echo "Attempt $attempt/$max_attempts failed" >&2
+    if (( attempt < max_attempts )); then           # don't sleep after the last try
+        sleep 2
+    fi
+done
+
+echo "All $max_attempts attempts failed" >&2
+exit 1
+```
+
+```bash
+./retry.sh 5 curl -sf http://localhost:8080/health   # wait for a service to come up
+./retry.sh 3 kubectl get pods -n prod                 # tolerate a flaky API call
+```
+> Verified: succeeds mid-way (exit 0), exhausts all tries (exit 1), and rejects
+> bad input — all with correct exit codes.
+
+**Polish & pitfalls:**
+- **Don't sleep after the last attempt** — guard with `if (( attempt < max_attempts ))`;
+  otherwise you waste the final pause.
+- **Return the right exit code** — `exit 0` on success, `exit 1` if exhausted, so a
+  caller can react.
+- **Validate N as a positive integer** — `^[1-9][0-9]*$` (≥1, no leading zeros). `0`
+  retries is meaningless, and leading zeros trigger the octal trap in `(( ))`
+  (`010` = 8, `08` = error).
+- **Quote `"$@"`** so a command with spaced args survives (Day 10).
+- **Next level:** production retries use **exponential backoff** — 1s, 2s, 4s, 8s…
+  with a little random jitter — instead of a flat pause. That's Day 51.
 
 ## Section 2 — Functions
 
@@ -3199,22 +3274,118 @@ done < file
 
 ## Section 9 — Parameter expansion (string surgery, no external tools)
 
-Bash can slice strings itself — faster and safer than calling `basename`/`dirname`.
-Given `p="/var/log/nginx/access.log"`:
+Bash can slice and reshape strings **itself** — no `basename`, `dirname`, `cut`,
+or `sed` subprocess needed. Faster, safer, and it's the whole point of Day 27.
 
-| Expansion       | Result             | Meaning                          |
-|-----------------|--------------------|----------------------------------|
-| `${p##*/}`      | `access.log`       | strip longest `*/` → **filename** |
-| `${p%/*}`       | `/var/log/nginx`   | strip shortest `/*` → **directory** |
-| `${name%.*}`    | `access`           | strip extension → **basename**   |
-| `${name##*.}`   | `log`              | the **extension**                |
-| `${#p}`         | `25`               | **length** of the string         |
-| `${p:-default}` | value, or `default` if unset | provide a **fallback** |
-| `${p/old/new}`  | replace first `old` | in-string substitution          |
+### The trim operators — `#` `##` `%` `%%`
 
-Memory trick: **`#` cuts from the front** (# is left of $ on the keyboard),
-**`%` cuts from the back**; **doubled** (`##`/`%%`) = greedy (longest match).
-This is exactly Day 27. Verified all of the above.
+These **remove a matching piece** from one end of the string. The two things to
+remember:
+
+| Operator | Direction | Amount |
+|----------|-----------|--------|
+| `${var#pattern}`  | cut from the **front** | **shortest** match |
+| `${var##pattern}` | cut from the **front** | **longest** match (greedy) |
+| `${var%pattern}`  | cut from the **back**  | **shortest** match |
+| `${var%%pattern}` | cut from the **back**  | **longest** match (greedy) |
+
+> **Memory trick:** `#` is **left** of `$` on the keyboard → cuts the **left/front**.
+> `%` is **right** of `$` → cuts the **right/back**. **Doubled = greedy** (longest).
+
+The `pattern` uses globs (`*`, `?`, `[...]`), not regex. `*` = "any run of chars."
+
+#### Single vs double — why it matters
+
+For `p="/var/log/nginx/access.log"`:
+
+```bash
+${p#*/}    # var/log/nginx/access.log   (shortest: removes just the first "/")
+${p##*/}   # access.log                 (longest: removes up to the LAST "/")
+```
+Both cut from the front with pattern `*/`, but `#` stops at the *first* slash while
+`##` eats *all* the way to the last. To pull a filename out of a path you want the
+**greedy `##`**. Verified.
+
+### The four path pieces (Day 27, worked out)
+
+Given `path="/var/log/nginx/access.log"` — do it in **two steps**: path → filename,
+then filename → name/extension:
+
+| Goal | Expansion | Result | How |
+|------|-----------|--------|-----|
+| **directory** | `${path%/*}`   | `/var/log/nginx` | cut shortest `/*` off the **back** |
+| **filename**  | `${path##*/}`  | `access.log`     | cut longest `*/` off the **front** |
+| **name** (no ext) | `${file%.*}`  | `access`     | cut shortest `.*` off the **back** |
+| **extension** | `${file##*.}`  | `log`            | cut longest `*.` off the **front** |
+
+```bash
+path="/var/log/nginx/access.log"
+dir="${path%/*}"          # /var/log/nginx
+file="${path##*/}"        # access.log
+name="${file%.*}"         # access
+ext="${file##*.}"         # log
+```
+
+> ⚠️ **Edge case (interview bonus):** a file with **no extension** (`/etc/hostname`).
+> Then `${file%.*}` and `${file##*.}` both just return the whole filename (there's
+> no `.` to cut) — so `name` and `ext` would both be `hostname`. Know this behavior.
+
+### Length & substrings
+
+```bash
+${#var}         # LENGTH (character count): ${#path} -> 25
+${var:offset}          # substring FROM offset:  ${path:5}    -> log/nginx/access.log
+${var:offset:length}   # substring of length:    ${path:0:4}  -> /var
+```
+Verified all three.
+
+### Defaults & fallbacks — handle unset variables
+
+| Expansion         | Meaning                                          |
+|-------------------|--------------------------------------------------|
+| `${var:-default}` | use **default** if `var` is unset/empty (var unchanged) |
+| `${var:=default}` | use **and assign** default if unset/empty        |
+| `${var:?message}` | **error out** with message if unset/empty        |
+| `${var:+alt}`     | use **alt** only if `var` **is** set              |
+
+```bash
+port="${PORT:-8080}"          # PORT if set, else 8080 (very common in scripts)
+: "${CONFIG:?must set CONFIG}"  # abort with an error if CONFIG isn't set
+```
+> `${VAR:-x}` is the idiomatic way to give a config value a default. Verified:
+> unset → `DEF`; set → the real value.
+
+### Search & replace (no `sed` needed)
+
+| Expansion          | Effect                              |
+|--------------------|-------------------------------------|
+| `${var/old/new}`   | replace the **first** `old`         |
+| `${var//old/new}`  | replace **all** `old` (global)      |
+| `${var/#old/new}`  | replace only if `old` is at the **start** |
+| `${var/%old/new}`  | replace only if `old` is at the **end**   |
+
+```bash
+${p/log/LOG}     # /var/LOG/nginx/access.log   (first only)
+${p//log/LOG}    # /var/LOG/nginx/access.LOG   (all)
+```
+Verified both.
+
+### Case conversion (bash 4+)
+
+```bash
+${var^}    # Capitalize first char        ${var^^}   # UPPERCASE all
+${var,}    # lowercase first char         ${var,,}   # lowercase all
+```
+> Standard on Linux (bash 4+). e.g. `name="${name,,}"` to normalise input to
+> lowercase. (Not available in ancient bash 3.x.)
+
+#### Key takeaways
+- **`#`/`##` cut the front, `%`/`%%` cut the back; doubled = greedy (longest).**
+- Path pieces: dir `${p%/*}`, file `${p##*/}`, name `${f%.*}`, ext `${f##*.}`.
+- `${#var}` = length; `${var:o:l}` = substring.
+- `${var:-default}` gives a fallback; `${var:?msg}` fails fast if unset.
+- `${var//old/new}` replaces all; `${var,,}`/`${var^^}` change case (bash 4+).
+- All of this replaces `basename`/`dirname`/`cut`/`sed` — no subprocess, instant.
 
 ## Section 10 — `getopts` (proper flag parsing — Day 35)
 
@@ -3469,3 +3640,4 @@ done < "$file"
 - Guard the **last line without a newline** with `|| [[ -n "$line" ]]`.
 - `${#var}` = length (characters); `${#arr[@]}` = array size.
 - Never `for line in $(cat file)` — it splits on words and globs.
+
