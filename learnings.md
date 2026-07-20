@@ -3793,3 +3793,125 @@ done < "$file"
 - `${#var}` = length (characters); `${#arr[@]}` = array size.
 - Never `for line in $(cat file)` — it splits on words and globs.
 
+---
+
+## Day 32 — Regex capture groups & `BASH_REMATCH` (IPv4 validation)
+
+> Day 32 validates an IPv4 address. The new technique is **capturing parts of a
+> match** with `( )` groups and reading them back from the **`BASH_REMATCH`** array
+> — a big step up from the plain `=~` matching in Day 3 §5.
+
+### Section 1 — Why a regex alone can't do it
+
+A regex is great at checking **shape**, but weak at checking **numeric range**.
+An IPv4 like `999.999.999.999` has the right *shape* (four dot-separated numbers)
+but is invalid (each part must be 0–255). A pure regex that also enforces ≤ 255
+is possible but horrible to read.
+
+So the clean approach is **two steps**:
+1. **Regex** → check the structure *and* **capture** the four octets.
+2. **Arithmetic** → check each captured octet is 0–255.
+
+> "Regex for the shape, code for the value" — a pattern you'll reuse for dates,
+> versions, ports, anything that's "formatted text with numeric rules."
+
+### Section 2 — Capture groups `( )` and `BASH_REMATCH`
+
+Parentheses `( )` in a regex **capture** the text they match so you can use it
+afterwards. After a successful `[[ str =~ regex ]]`, bash fills a special array
+called **`BASH_REMATCH`**:
+
+| Element | Holds |
+|---------|-------|
+| `BASH_REMATCH[0]` | the **whole** matched string |
+| `BASH_REMATCH[1]` | the text of the **1st** `( )` group |
+| `BASH_REMATCH[2]` | the **2nd** group … and so on |
+
+```bash
+ip="192.168.1.1"
+[[ $ip =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]
+# BASH_REMATCH[0] = 192.168.1.1   (whole match)
+# BASH_REMATCH[1] = 192           BASH_REMATCH[2] = 168
+# BASH_REMATCH[3] = 1             BASH_REMATCH[4] = 1
+```
+> Verified: `${#BASH_REMATCH[@]}` = 5 (the whole match **plus** 4 groups). The
+> array is refilled on every `=~`, so read it right after the match.
+
+### Section 3 — The IPv4 regex, broken down
+
+```
+^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$
+```
+
+| Part            | Meaning |
+|-----------------|---------|
+| `^` … `$`       | anchor to the **whole** string (no partial matches, no trailing spaces) |
+| `([0-9]{1,3})`  | **1 to 3 digits**, captured as an octet |
+| `\.`            | a **literal dot** — `.` alone means "any char", so escape it |
+| four groups     | four octets separated by three dots |
+
+- `{1,3}` = "between 1 and 3 of the previous" (Day 3 §5 quantifiers).
+- The **anchors matter**: without `^...$`, `"1.2.3.4 "` (trailing space) or
+  `"x1.2.3.4"` could sneak through. Verified: the anchored version rejects them.
+- **Don't quote the regex** inside `[[ =~ ]]` (Day 3 §5) — quoting makes it a
+  literal string.
+
+### Section 4 — Looping the octets: array slice + `10#`
+
+```bash
+for octet in "${BASH_REMATCH[@]:1:4}"; do
+    if (( 10#$octet > 255 )); then ... ; fi
+done
+```
+
+**`"${BASH_REMATCH[@]:1:4}"`** — array **slicing**: `[@]:start:count` takes
+`count` elements beginning at index `start`. So `:1:4` = indices 1,2,3,4 — the
+four octets, skipping index 0 (the whole match). Verified → `192 168 1 1`.
+
+**`10#$octet`** — forces **base 10**. In `(( ))`, a number with a leading zero is
+read as **octal**: `010` = 8, and `08` throws `value too great for base`. An octet
+like `192.168.01.1` would break the check. `10#$octet` says "interpret this as
+decimal," sidestepping the octal trap (same trap as Day 29). Verified:
+`(( 08 > 255 ))` errors, but `(( 10#08 > 255 ))` is a clean `0`.
+
+### Section 5 — The full Day 32 solution
+
+```bash
+#!/bin/bash
+
+ip=$1
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <ip-address>" >&2
+    exit 1
+fi
+
+# 1. Match the STRUCTURE and CAPTURE the four octets
+if [[ ! $ip =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+    echo "INVALID: '$ip' (wrong format)"
+    exit 1
+fi
+
+# 2. Check each captured octet is 0-255
+for octet in "${BASH_REMATCH[@]:1:4}"; do
+    if (( 10#$octet > 255 )); then
+        echo "INVALID: '$ip' (octet $octet > 255)"
+        exit 1
+    fi
+done
+
+echo "VALID: '$ip'"
+exit 0
+```
+> Verified: accepts `192.168.1.1`, `0.0.0.0`, `255.255.255.255`; rejects
+> `256.1.1.1` (octet check), `999.999.999.999`, `1.2.3`, `1.2.3.4.5`, `abc`, and
+> `"1.2.3.4 "` (trailing space).
+
+#### Key takeaways
+- `( )` in a regex **captures**; after `=~`, read groups from `BASH_REMATCH[1]`,
+  `[2]`, … (`[0]` = whole match).
+- **Regex checks shape, code checks value** — regex can't cleanly enforce ≤ 255.
+- `"${BASH_REMATCH[@]:1:4}"` slices the 4 octets out of the array.
+- Anchor with `^...$`; escape literal dots `\.`; don't quote the regex.
+- `10#$n` forces base-10 so leading-zero octets don't trigger the octal trap.
+
