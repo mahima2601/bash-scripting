@@ -2399,3 +2399,747 @@ two fall-through variants:
 - Patterns are **globs** — `*.txt`, `[Yy]`, `a|b` — not just literal strings.
 - First matching pattern wins, so order from **specific → general**.
 - `case` shines for one-variable-many-values (menus, subcommands, init scripts).
+
+---
+
+# Tier 2 — Loops, Functions & Text Processing (Days 16–35): Pre-flight Primer
+
+> Read this **before** starting Day 16. Tier 1 was about single decisions
+> (`if`, `case`, one command). Tier 2 is about **doing things repeatedly** (loops),
+> **packaging reusable logic** (functions), and **slicing text** (`grep`/`sed`/`awk`)
+> — the actual day-job of a DevOps engineer. You don't need to master all of it
+> now; skim it, then come back to each section as its day arrives.
+
+## Section 1 — Loops: `for`, `while`, `until`
+
+Three loop shapes. You'll use `for` most.
+
+#### `for` — loop over a list of things
+
+```bash
+for i in 1 2 3; do echo "$i"; done          # explicit list
+for i in {1..10}; do echo "$i"; done         # brace RANGE -> 1..10
+for i in $(seq 1 10); do echo "$i"; done      # seq does the same
+for f in *.log; do echo "$f"; done            # a GLOB (each matching file)
+for arg in "$@"; do echo "$arg"; done         # the script's arguments (Day 10)
+```
+
+- `{1..10}` is **brace expansion** (Day 0 §8) — also `{1..10..2}` (step 2),
+  `{a..e}`. It must be *literal* — `{1..$n}` does **not** work (use `seq` then).
+- **C-style `for`** (like Python/C), great when you need arithmetic control:
+  ```bash
+  for (( i=1; i<=10; i++ )); do echo "$i"; done
+  ```
+
+#### `while` — loop *while* a condition is true
+
+```bash
+i=1
+while (( i <= 10 )); do
+    echo "$i"
+    (( i++ ))              # remember the ++ gotcha (Day 3 §8)
+done
+```
+
+`while` is also how you read a file line by line (Section 9) and how you build
+retry loops (Day 29).
+
+#### `until` — loop *until* a condition becomes true (rarely used)
+
+```bash
+until (( i > 10 )); do echo "$i"; (( i++ )); done   # opposite of while
+```
+
+#### Loop control
+
+| Keyword    | Effect                                  |
+|------------|-----------------------------------------|
+| `break`    | exit the loop immediately               |
+| `continue` | skip to the next iteration              |
+| `break 2`  | break out of **2** nested loops         |
+
+> ⚠️ **The no-match glob trap (Day 17):** `for f in *.log` — if there are **no**
+> `.log` files, bash leaves the pattern **literal**, so `f` becomes the string
+> `*.log`. Always guard: `[[ -e "$f" ]] || continue` inside the loop, or set
+> `shopt -s nullglob` so a no-match expands to nothing.
+
+## Section 2 — Functions
+
+A **function** is a named, reusable block. Two ways to define (identical):
+
+```bash
+greet() {                 # preferred style
+    echo "Hello, $1"      # $1 = first arg TO THE FUNCTION (not the script)
+}
+
+function greet {  ...  }  # older style, same thing
+```
+
+Call it like a command: `greet Mahima` (no parentheses, args space-separated).
+
+#### Arguments inside a function
+
+Inside a function, `$1 $2 $@ $#` refer to the **function's** arguments, not the
+script's — the same positional-parameter rules as Day 2.
+
+```bash
+add() { echo $(( $1 + $2 )); }
+add 3 4                    # prints 7
+```
+
+#### The TWO ways a function "returns" something — this trips everyone up
+
+| You want to return… | Use          | Caller reads it with |
+|---------------------|--------------|----------------------|
+| a **success/fail**  | `return 0` / `return 1` (exit code) | `if myfunc; then` |
+| a **value** (text/number) | `echo` the value | `x=$(myfunc)` (capture) |
+
+```bash
+is_even() { (( $1 % 2 == 0 )); }        # exit code: true if even (Day 19)
+if is_even 4; then echo "even"; fi
+
+double() { echo $(( $1 * 2 )); }         # VALUE via echo (Day 33)
+result=$(double 7)                        # capture -> 14
+```
+
+> `return` only sets an **exit code (0–255)** — it can NOT hand back a string or
+> a big number. To return data, `echo` it and capture with `$( )`. Verified.
+
+#### `local` — keep variables inside the function
+
+```bash
+myfunc() {
+    local tmp="only visible in here"     # without 'local' it leaks to global!
+}
+```
+Always declare function-internal variables `local` so they don't clobber
+globals — a classic senior-level habit (Day 20, Day 58).
+
+## Section 3 — The text-processing toolkit: which tool when?
+
+Tier 2's heart. Four tools overlap; pick by the job:
+
+| Tool   | Best at…                                        | Reach for it when |
+|--------|-------------------------------------------------|-------------------|
+| `grep` | **finding** lines that match a pattern          | "show/count lines containing X" |
+| `cut`  | pulling **fixed columns** by delimiter          | "give me field 3 of a CSV" |
+| `awk`  | **field-by-field** logic, math, conditionals    | "sum column 2 where column 1 = X" |
+| `sed`  | **editing** a stream (find/replace, delete)     | "replace X with Y", "delete blank lines" |
+| `sort` `uniq` `wc` | ordering, de-duping, counting       | almost always at the end of a pipe |
+
+The magic is **combining** them with pipes `|` (Day 0 §7):
+```bash
+cat access.log | grep " 404 " | awk '{print $1}' | sort | uniq -c | sort -rn
+#                └ find 404s    └ pull the IP      └ group+count └ most first
+```
+This one line = "top IP addresses hitting 404s" (basically Day 23).
+
+## Section 4 — `grep` (find lines by pattern)
+
+```bash
+grep "ERROR" app.log          # lines containing ERROR
+grep -i "error" app.log       # -i = case-insensitive
+grep -c "ERROR" app.log       # -c = COUNT matching lines (Day 22)
+grep -v "DEBUG" app.log       # -v = INVERT: lines NOT matching (Day 26)
+grep -n "ERROR" app.log       # -n = show line numbers
+grep -r "TODO" .              # -r = recursive through a directory
+grep -E "ERROR|WARN" app.log  # -E = extended regex (enables | ( ) + )
+grep -o "[0-9]\+" app.log     # -o = print only the matched part
+```
+
+**Anchors** make patterns precise (Day 22 hint):
+
+| Pattern     | Matches                          |
+|-------------|----------------------------------|
+| `^ERROR`    | lines **starting** with ERROR    |
+| `done$`     | lines **ending** with done       |
+| `^$`        | **empty** lines                  |
+| `^\s*#`     | lines that are comments (Day 26) |
+
+> `grep -E` (or `egrep`) turns on `|`, `()`, `+`, `?` without backslashes.
+> Verified: `grep -cE '^(ERROR|WARN)'` counted 3 lines.
+
+## Section 5 — `sed` (stream editor: find/replace, delete)
+
+The one you'll use 90% of the time is **substitution**:
+
+```bash
+sed 's/localhost/0.0.0.0/'  conf         # replace FIRST localhost per line
+sed 's/localhost/0.0.0.0/g' conf         # g = ALL on each line (global)
+sed -n '5,10p' file                       # -n + p = print only lines 5–10
+sed '/^#/d' file                          # d = DELETE comment lines
+sed '/^$/d' file                          # delete blank lines
+```
+
+Anatomy of `s/old/new/g`: **s**ubstitute, `/` separators, `g` = global flag.
+
+#### ⚠️ The big macOS vs Linux gotcha: in-place editing `-i` (Day 25)
+
+`-i` edits the file **in place**, but the syntax differs by platform:
+
+| Platform            | Command                                   |
+|---------------------|-------------------------------------------|
+| **Linux** (GNU sed) | `sed -i 's/a/b/' file` (no backup)        |
+| **Linux** + backup  | `sed -i.bak 's/a/b/' file`                |
+| **macOS** (BSD sed) | `sed -i '' 's/a/b/' file`  ← **needs the `''`** |
+| **macOS** + backup  | `sed -i.bak 's/a/b/' file`                |
+
+> On your Mac, `sed -i 's/a/b/' file` **errors** — BSD `-i` requires a backup
+> suffix argument (use `''` for none). Verified. `sed -i.bak` is the **portable**
+> form that works on both. This exact trap is Day 25.
+
+## Section 6 — `awk` (field-by-field processing)
+
+`awk` treats each line as **fields** split on whitespace (or `-F` delimiter).
+`$1` = first field, `$2` = second, … `$0` = whole line, `NF` = number of fields,
+`NR` = current line number.
+
+```bash
+awk '{print $1}'  file             # first field of each line
+awk -F, '{print $1, $3}' data.csv  # -F, = comma-separated (CSV) -> Day 24
+awk '{print NR": "$0}' file         # prepend line numbers
+awk '$3 > 100' file                 # print lines where field 3 > 100
+awk '/ERROR/ {print $2}' file       # for lines matching /ERROR/, print field 2
+awk '{sum += $1} END {print sum}'   # RUNNING TOTAL of column 1
+```
+
+- **`BEGIN { }` / `END { }`** run once before / after all lines — perfect for
+  headers and totals.
+- Built-in vars: `NR` (line number), `NF` (field count), `$NF` (last field).
+
+> Verified: `awk -F, '{print $1, $3}'` on `alice,30,NYC` printed `alice NYC`.
+> `awk` is a whole language, but 90% of DevOps use is "print/filter/sum a column."
+
+## Section 7 — `cut`, `sort`, `uniq` (the pipeline finishers)
+
+```bash
+cut -d, -f1,3 data.csv       # -d = delimiter, -f = fields 1 and 3 (Day 24)
+cut -d: -f1 /etc/passwd       # usernames (Day 9 used this)
+
+sort file                     # alphabetical
+sort -n file                  # -n = NUMERIC sort (10 after 9, not before)
+sort -r file                  # -r = reverse
+sort -k2 file                 # sort by 2nd field
+sort -t, -k3 -n data.csv      # -t = field separator, sort by field 3 numerically
+
+uniq file                     # collapse ADJACENT duplicate lines
+uniq -c file                  # -c = prefix each line with its COUNT
+```
+
+> ⚠️ `uniq` only collapses **adjacent** duplicates — you must **`sort` first**.
+> The classic "count by frequency" idiom (Day 23) is:
+> ```bash
+> sort | uniq -c | sort -rn      # group, count, then most-frequent first
+> ```
+> Verified: it correctly found `3 10.0.0.1` as the top IP.
+
+- `cut` vs `awk`: `cut` is simpler for fixed delimiters; `awk` when you need logic
+  or whitespace-runs as one separator.
+
+## Section 8 — Reading a file line by line
+
+The **correct**, safe idiom (Day 21) — memorize this exact line:
+
+```bash
+while IFS= read -r line; do
+    echo "len=${#line}: $line"
+done < file
+```
+
+| Piece            | Why it's there                                            |
+|------------------|-----------------------------------------------------------|
+| `IFS=`           | don't trim leading/trailing whitespace (Day 4 §1)         |
+| `read -r`        | don't let `\` act as an escape (keep text literal)        |
+| `< file`         | feed the file into the loop's stdin                       |
+| `${#line}`       | length of the line (Day 21 needs "lines longer than 80")  |
+
+> ⚠️ **Interview favorite (Day 52):** never do `for line in $(cat file)` — it
+> splits on **spaces**, not lines, and globs. `while IFS= read -r` is the only
+> correct way. Verified line-by-line with `${#line}` lengths.
+
+## Section 9 — Parameter expansion (string surgery, no external tools)
+
+Bash can slice strings itself — faster and safer than calling `basename`/`dirname`.
+Given `p="/var/log/nginx/access.log"`:
+
+| Expansion       | Result             | Meaning                          |
+|-----------------|--------------------|----------------------------------|
+| `${p##*/}`      | `access.log`       | strip longest `*/` → **filename** |
+| `${p%/*}`       | `/var/log/nginx`   | strip shortest `/*` → **directory** |
+| `${name%.*}`    | `access`           | strip extension → **basename**   |
+| `${name##*.}`   | `log`              | the **extension**                |
+| `${#p}`         | `25`               | **length** of the string         |
+| `${p:-default}` | value, or `default` if unset | provide a **fallback** |
+| `${p/old/new}`  | replace first `old` | in-string substitution          |
+
+Memory trick: **`#` cuts from the front** (# is left of $ on the keyboard),
+**`%` cuts from the back**; **doubled** (`##`/`%%`) = greedy (longest match).
+This is exactly Day 27. Verified all of the above.
+
+## Section 10 — `getopts` (proper flag parsing — Day 35)
+
+For real CLI flags like `-e prod -v -h`, don't hand-parse `$1`/`$2` — use the
+built-in `getopts`:
+
+```bash
+verbose=0
+while getopts "e:vh" opt; do        # "e:vh" = valid flags; ':' means -e takes a value
+    case "$opt" in
+        e) env="$OPTARG" ;;          # $OPTARG holds -e's value
+        v) verbose=1 ;;
+        h) echo "usage..."; exit 0 ;;
+        *) echo "bad flag" >&2; exit 1 ;;
+    esac
+done
+shift $((OPTIND - 1))                # drop parsed flags, leaving positional args
+```
+
+| Piece      | Meaning                                             |
+|------------|-----------------------------------------------------|
+| `"e:vh"`   | flags `-e -v -h`; the `:` after `e` = **needs an argument** |
+| `$OPTARG`  | the value given to a flag that takes one            |
+| `$OPTIND`  | index of the next arg — used by `shift` at the end  |
+
+> Verified: parsed `-e prod -v` into `env=prod` and `verbose on`. This is a
+> **senior-must-know** — production scripts use `getopts`, not `$1` guessing.
+
+## Section 11 — Networking & real-world commands you'll meet
+
+Tier 2 dips into networking and cluster tooling. What you need to know:
+
+#### IPv4 addresses (Day 32)
+- Format: **four numbers (octets) 0–255**, dot-separated: `192.168.1.10`.
+- Validating means: 4 groups of digits, **each ≤ 255** — a regex alone isn't
+  enough (regex can match `999`); you also check each octet's value with
+  `BASH_REMATCH` (Day 3 §5) capturing the four parts.
+
+#### `ping` (Day 34)
+```bash
+ping -c 1 host        # -c 1 = send just ONE packet (else it runs forever)
+```
+Exit code `0` = reachable, non-zero = not (an exit-code check, like Day 9/12).
+
+> ⚠️ macOS vs Linux: the **timeout** flag differs. Linux `-W 1` = wait 1 **second**;
+> macOS `-W` is in **milliseconds** (and also has `-t` for total timeout). So
+> `ping -c1 -W1` behaves differently per platform — check `man ping`. Use `-c 1`
+> (portable) and add the timeout flag your platform expects.
+
+#### `find` (Day 31) — recursive file search + actions
+```bash
+find . -type f -name "*.log"          # all .log files, recursively
+find . -type f -exec du -h {} +        # run du on each found file ({} = the file)
+find /tmp -type f -mtime +7 -delete    # files older than 7 days (Day 36 later)
+```
+`-exec ... {} +` feeds the found files into a command — combine with `sort` for
+"5 largest files" (Day 31).
+
+#### `kubectl` (Day 28) — Kubernetes CLI
+```bash
+kubectl get ns                  # list namespaces
+kubectl get pods -n <namespace> # pods in a namespace
+```
+> ⚠️ The output has a **header row** (`NAME  STATUS ...`) — skip it when looping
+> (`tail -n +2`, or `--no-headers`). You need a real cluster to run this; it's
+> about **parsing command output** (Day 28), the skill that matters.
+
+#### `seq` and date math (Days 29, 30)
+- `seq 1 "$N"` → generate `1..N` for a counted retry loop (Day 29).
+- Date arithmetic for "last 24 hours" (Day 30): Linux `date -d '24 hours ago' +%s`
+  vs macOS `date -v-24H +%s` (Day 6 §6). Compare Unix timestamps (`+%s`).
+
+## Section 12 — Habits to carry into every Tier 2 script
+
+- **Quote everything:** `"$var"`, `"$@"`, `"$f"` — globs and spaces bite hardest
+  in loops (Day 10).
+- **Guard no-match globs:** `for f in *.log` can yield the literal `*.log`
+  (Section 1).
+- **Validate + fail fast:** arg checks, `>&2`, `exit 1` — the Tier 1 habit still
+  applies (Days 8, 9, 14).
+- **`local` in functions** to avoid leaking variables (Section 2).
+- **Prefer parameter expansion** over spawning `basename`/`dirname`/`cut` when
+  you're just slicing one string (Section 9) — fewer processes, faster.
+- **`while IFS= read -r`**, never `for line in $(cat)` (Section 8).
+- **Know your platform:** `sed -i`, `date`, and `ping` flags differ macOS↔Linux.
+  Write for Linux (the server), know the macOS form to test locally.
+
+#### Tier 2 key takeaways
+- `for` for lists/globs/ranges, `while` for conditions and reading files.
+- Functions return **status** via `return`/exit code, **data** via `echo` + `$( )`.
+- `grep` finds, `cut` slices columns, `awk` does field logic/math, `sed` edits.
+- `sort | uniq -c | sort -rn` = count-by-frequency; `uniq` needs a `sort` first.
+- `${##}`/`${%%}` slice paths; `getopts` parses real flags; quote everything.
+
+---
+
+## Day 19 — Functions in Bash (end to end)
+
+> The Tier 2 primer §2 is the quick overview; this is the **full reference**.
+> Functions are how you stop repeating yourself and start building reusable,
+> readable scripts. Master this — every serious script from here uses functions.
+
+### Section 1 — What a function is & why use one
+
+A **function** is a **named block of commands** you can run over and over by name.
+Instead of copy-pasting the same 5 lines everywhere, you write them once and call
+them.
+
+```bash
+greet() {
+    echo "Hello there!"
+}
+
+greet        # run it — prints "Hello there!"
+greet        # run it again
+```
+
+Why they matter:
+- **Don't Repeat Yourself** — write logic once, call it many times.
+- **Readability** — `if is_valid_ip "$x"` reads like English vs a wall of regex.
+- **Testable & composable** — small functions combine into bigger scripts (Day 58's
+  `lib.sh`, Day 60's orchestrator).
+
+### Section 2 — Defining & calling functions
+
+Two syntaxes — **identical** in behaviour; the first is preferred:
+
+```bash
+name() {          # ← preferred (POSIX)
+    commands
+}
+
+function name {   # ← older bash-only style, same result
+    commands
+}
+```
+
+**Calling** is just the name, like any command — **no parentheses, args separated
+by spaces**:
+
+```bash
+greet Mahima          # ✅ correct
+greet("Mahima")       # ❌ this is NOT how bash calls functions
+```
+
+> ⚠️ A function must be **defined before it's called** — bash reads top to bottom.
+> Put your functions near the top, and the "main" logic below them.
+
+### Section 3 — Arguments inside a function
+
+A function gets its **own** positional parameters — the same `$1`, `$2`, `$@`,
+`$#` rules as a script (Day 2), but scoped to the **function's** call, not the
+script's.
+
+```bash
+add() {
+    echo "got $# args: $@"
+    echo $(( $1 + $2 ))
+}
+add 3 4          # got 2 args: 3 4  /  7
+```
+
+| Inside a function | Means |
+|-------------------|-------|
+| `$1`, `$2`, …     | the function's 1st, 2nd, … argument |
+| `$@`              | all the function's args (each quoted separately) |
+| `$#`              | how many args the function got |
+| `$0`              | still the **script** name (not the function) |
+| `${FUNCNAME[0]}`  | the current function's **name** (verified) |
+
+#### `shift` — consume arguments from the front
+
+`shift` **drops `$1` and slides everything down** (`$2`→`$1`, `$3`→`$2`, …). Great
+when the first arg is special and the rest is "everything else" (Day 20's `log`):
+
+```bash
+log() {
+    local level="$1"      # first arg = level
+    shift                  # drop it
+    echo "[$level] $*"     # $* = the remaining words (the message)
+}
+log INFO "server started"   # [INFO] server started
+```
+
+### Section 4 — The TWO ways a function "returns" (the big one)
+
+This is the #1 thing beginners get wrong. Bash functions return in **two totally
+different ways**, depending on whether you want a **status** or a **value**:
+
+| You want to return… | Use              | Caller reads it with     |
+|---------------------|------------------|--------------------------|
+| success / failure (yes-no) | `return N` (exit code) | `if myfunc; then` |
+| a **value** (string/number) | `echo` the value | `x=$(myfunc)` (capture)  |
+
+#### Way 1 — `return` = an exit code (status only)
+
+```bash
+is_even() {
+    if (( $1 % 2 == 0 )); then
+        return 0        # 0 = success = "true"
+    else
+        return 1        # non-zero = failure = "false"
+    fi
+}
+
+if is_even 4; then echo "even"; fi     # uses the exit code as the condition
+```
+
+> ⚠️ **`return` can ONLY hold a number 0–255** (it's an exit **code**, not a value).
+> Bigger numbers **wrap around** — verified: `return 256`→`0`, `return 300`→`44`,
+> `return -1`→`255`. So you can **never** use `return` to hand back real data.
+
+#### Way 2 — `echo` + capture = a value
+
+To return actual data (a number over 255, a string, a computed result), **`echo`
+it** and have the caller **capture** it with command substitution (Day 13):
+
+```bash
+double() {
+    echo $(( $1 * 2 ))      # "return" the value by printing it
+}
+
+result=$(double 7)          # capture -> 14
+echo "$result"
+```
+
+> Key mental model: `return` answers **"did it work?"**; `echo`+`$()` answers
+> **"what's the value?"**. Mixing them up is the classic bug — e.g. writing
+> `return $(( $1 * 2 ))` for a big number silently wraps past 255.
+
+### Section 5 — Variable scope: `local` vs global
+
+By default, **all** variables in bash are **global** — a variable set inside a
+function leaks out and can clobber the rest of your script:
+
+```bash
+name="global"
+leaky()  { name="LEAKED"; }        # no 'local' → overwrites the global!
+leaky;   echo "$name"               # LEAKED   ⚠️
+
+safe()   { local name="inside"; }   # 'local' → confined to the function
+safe;    echo "$name"               # still "global"  ✅
+```
+
+> **Always declare a function's own variables `local`.** Verified above: without
+> `local`, `name` leaked; with it, the global was untouched. This prevents
+> maddening bugs where a helper function silently changes a variable the caller
+> was using (a real senior-level habit — Day 58).
+
+### Section 6 — The Day 19 worked example
+
+Task: a function `is_even` that returns success/failure via exit code, used in a
+loop over 1–20.
+
+```bash
+#!/bin/bash
+
+is_even() {
+    (( $1 % 2 == 0 ))       # (( )) sets the exit code: 0 if even, 1 if odd
+}
+
+for i in {1..20}; do
+    if is_even "$i"; then
+        echo "$i is even"
+    fi
+done
+```
+
+Two equivalent forms of the function:
+```bash
+is_even() { (( $1 % 2 == 0 )); }          # concise — relies on (( )) exit code
+
+is_even() {                                # explicit — spells out return
+    if (( $1 % 2 == 0 )); then return 0; else return 1; fi
+}
+```
+Both work because `(( ))` already sets its exit status from the result (Day 3 §3).
+The function then plugs straight into `if is_even "$i"` — the function **is** the
+condition (see Day 9/12 for the same command-exit-status idea).
+
+### Section 7 — Gotchas & best practices
+
+- **Define before you call** — functions must appear above their first use.
+- **`local` your variables** — or they leak into the global scope (§5).
+- **`return` is 0–255 only** — for data, `echo` + `$()` (§4). Don't `return` a
+  computed value that might exceed 255.
+- **Quote the args** — `myfunc "$var"`, and inside use `"$1"`, `"$@"` (Day 10).
+- **One job per function** — small, named, testable. Compose them.
+- **A common structure** for bigger scripts: helper functions up top, then a
+  `main()` function, then a single `main "$@"` call at the bottom (Day 56).
+
+```bash
+main() {
+    # top-level logic here
+    log INFO "starting"
+    ...
+}
+main "$@"        # pass the script's args into main
+```
+
+#### Key takeaways
+- Define with `name() { ... }`; call with just `name arg1 arg2` (no parens).
+- Inside, `$1`/`$@`/`$#` are the **function's** args; `shift` consumes from the front.
+- **Return status** with `return` (0–255 exit code) → use in `if`.
+- **Return data** with `echo` → capture with `$( )`.
+- Always `local` a function's variables to avoid leaks.
+
+---
+
+## Day 21 — Reading files line by line & string length
+
+> Two new tools: the `while IFS= read -r line` idiom (the *only* correct way to
+> read a file line by line) and `${#var}` (string length). The Tier 2 primer §8
+> introduced them; this is the full breakdown, including the edge cases that make
+> them interview favorites.
+
+### Section 1 — The `read` command, in depth
+
+`read` reads **one line** from its input into a variable, and its **exit status**
+tells you whether it got one:
+
+- Returns **`0`** (success) each time it reads a line.
+- Returns **non-zero** when it hits **end-of-file** (nothing left).
+
+That success/failure is what drives the `while` loop — it keeps going until
+`read` fails at EOF (verified):
+
+```bash
+while IFS= read -r line; do
+    echo "$line"
+done < file
+```
+
+`read` on its own (from Day 4 §1) waits for keyboard input; here we redirect a
+**file** into it with `< file`, so it reads the file instead.
+
+### Section 2 — The `while IFS= read -r line` idiom, dissected
+
+Every piece of this line is there for a reason — leave one out and you get subtle
+bugs:
+
+```bash
+while IFS= read -r line; do ... done < file
+```
+
+| Piece      | What it does | What breaks without it |
+|------------|--------------|------------------------|
+| `while`    | loop as long as `read` succeeds (a line was read) | — |
+| `IFS=`     | set field separator to **empty** for this command | leading/trailing **spaces get trimmed** off each line |
+| `read`     | read one line into a variable | — |
+| `-r`       | **raw** mode | a `\` in the line is treated as an **escape** and mangled |
+| `line`     | the variable the line lands in | — |
+| `< file`   | feed the file into `read`'s stdin | reads from the keyboard instead |
+
+- **`IFS=`** — `IFS` (Internal Field Separator) is what bash splits on. Setting it
+  empty **just for this command** (the `IFS= read` prefix) means the whole line,
+  spaces and all, goes into `line` untouched.
+- **`-r`** — without it, a line containing `a\tb` would have its `\` interpreted.
+  `-r` keeps text **literal**. (You verified this back in Day 4 §1.)
+
+> Placing `IFS=` right before `read` on the same line sets it **only for that
+> command** — it doesn't change `IFS` for the rest of the script. A clean trick.
+
+### Section 3 — ⚠️ The last-line-without-a-newline trap
+
+A file's last line sometimes has **no trailing newline** (many editors, `printf`
+without `\n`, some logs). Plain `while read` **silently skips that last line** —
+because `read` reads the text but returns **non-zero** (EOF) at the same moment,
+so the loop body never runs for it.
+
+```bash
+printf 'line1\nline2\nlast'    # 'last' has NO newline after it
+
+while IFS= read -r line; do echo "$line"; done   # prints line1, line2 — MISSES 'last' ❌
+```
+
+The fix — also run the body when `read` failed **but** still put something in
+`line`:
+
+```bash
+while IFS= read -r line || [[ -n "$line" ]]; do
+    echo "$line"
+done < file
+```
+
+> Verified: the plain loop dropped `last`; the `|| [[ -n "$line" ]]` version caught
+> it. This is a classic gotcha — worth knowing for interviews and for real log
+> files that don't end in a newline.
+
+### Section 4 — String length with `${#var}`
+
+`${#var}` gives the **number of characters** in a variable:
+
+```bash
+s="hello"
+echo "${#s}"          # 5
+echo "${#EMPTY}"      # 0  (unset or empty -> 0)
+```
+
+| Expansion       | Gives you                                  |
+|-----------------|--------------------------------------------|
+| `${#var}`       | length of the string (character count)     |
+| `${#1}`         | length of the **1st argument**             |
+| `${#arr[@]}`    | number of **elements** in an array         |
+| `${#line}`      | length of the current line (Day 21's core) |
+
+- Verified: `${#s}`=5, `${#EMPTY}`=0, `${#arr[@]}`=4.
+- Counts **characters**, not bytes — in a UTF-8 locale a 3-byte emoji counts as 1.
+- It's **parameter expansion** (primer §9), so it's instant — no `wc -c` subprocess.
+
+Then a length test is just arithmetic (Day 3 §7):
+```bash
+if (( ${#line} > 80 )); then ...      # lines longer than 80 chars
+```
+
+### Section 5 — Why `for line in $(cat file)` is WRONG
+
+The tempting-but-broken alternative — **never use it**:
+
+```bash
+for line in $(cat file); do ... done    # ❌
+```
+
+- `for` iterates over **words**, not lines — `$(cat file)` is split on **spaces**
+  (via `IFS`), so a line `hello world` becomes **two** iterations.
+- It also **glob-expands** — a line containing `*` turns into filenames.
+
+`while IFS= read -r` is the only correct way. This exact contrast is Day 52, a
+senior-interview staple.
+
+### Section 6 — The Day 21 solution
+
+Task: print lines **longer than 80 characters**, with their line numbers.
+
+```bash
+#!/bin/bash
+
+file=$1
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <file>" >&2
+    exit 1
+fi
+if [[ ! -f "$file" ]]; then
+    echo "Error: '$file' is not a file" >&2
+    exit 1
+fi
+
+n=0
+while IFS= read -r line; do
+    (( ++n ))                        # PRE-increment: safe under set -e (Day 3 §8)
+    if (( ${#line} > 80 )); then
+        echo "$n: $line"
+    fi
+done < "$file"
+```
+
+- **Take the file as `$1`** and validate it (`-f`) — don't hardcode a filename.
+- **`(( ++n ))`** not `(( n++ ))`: starting from 0, post-increment returns exit 1
+  on the first pass, which would abort under `set -e` (Day 3 §8).
+- `(( ${#line} > 80 ))` — length check; `> 80` means "longer than 80" (80 itself
+  is *not* printed). Verified against exact-80 / 81 / 100-char lines.
+
+#### Key takeaways
+- `while IFS= read -r line; do ... done < file` — memorize it exactly.
+- `IFS=` preserves whitespace; `-r` keeps backslashes literal; `< file` is the input.
+- Guard the **last line without a newline** with `|| [[ -n "$line" ]]`.
+- `${#var}` = length (characters); `${#arr[@]}` = array size.
+- Never `for line in $(cat file)` — it splits on words and globs.
