@@ -1,9 +1,17 @@
 #!/bin/bash
 
-# Day 23. Extract all unique IP addresses from a web server 
-#access log and print them sorted by frequency 
-#(most frequent first). Concept: awk/grep + sort + uniq -c. Hint: sort | uniq -c | sort -rn
+# Day 27. Write a function that takes a full file path 
+#and prints the directory, the filename, the basename 
+#without extension, and the extension separately. 
+#Concept: parameter expansion. Hint: ${path##*/}, ${name%.*}, ${name##*.}.
 
 
-file=$1
-echo "$(awk '{print $1}' "$file" | sort | uniq -c | sort -nr)"
+path_info () {
+    local path="$1"
+    local dir="${path%/*}"
+    local file="${path##*/}"
+    local name="${file%.*}"
+    local extension="${file##*.}"
+
+}
+echo "$dir $file $name $extension"

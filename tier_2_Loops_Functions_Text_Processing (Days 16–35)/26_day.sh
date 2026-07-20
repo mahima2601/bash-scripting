@@ -5,16 +5,21 @@
 #prints the result. Concept: grep -v / sed. Hint: grep -vE '^\s*(#|$)'
 
 
+# or 
+# grep -vE '^\s*(#|$)' "$file"
+
 file=$1
 
 if [[ $# -ne 1 ]]; then
-    echo "Usage: $0 <csvfile>" >&2
+    echo "Usage: $0 <file>" >&2
     exit 1
 fi
 if [[ ! -f "$file" ]]; then
     echo "Error: '$file' is not a file" >&2
     exit 1
+fi
 
-sed '/^#/d'
-sed '/^$/d'
+sed '/^#/d; /^$/d' "$file"
+
+
 

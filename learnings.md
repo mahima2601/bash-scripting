@@ -34,18 +34,13 @@ Bash scripting is just **writing down the same commands** you'd type by hand, so
 the computer can repeat them reliably. If you can do it in the terminal, you can
 script it.
 
-> ⚠️ macOS note: your *login* shell is `zsh`, and the `bash` on macOS is an old
-> **3.2** version. Real Linux servers (where DevOps work happens) run bash 4 or
-> 5. A few features (associative arrays — Day 53, `${var,,}` lowercasing) need
-> bash 4+. For learning, install a modern bash with `brew install bash`.
-
 ### Section 2 — The filesystem and paths
 
 Linux organizes everything in a **tree** starting at `/` (the "root").
 
 ```
 /                 <- root of everything
-├── home/         <- users' home directories (on macOS: /Users/)
+├── home/         <- users' home directories (/home/<user>)
 │   └── mahima/   <- your home, shortcut: ~
 ├── etc/          <- system config files
 ├── var/          <- logs, variable data (/var/log)
@@ -134,8 +129,7 @@ commands stacked up.
 |--------------------------------|-----------------------------|
 | `find . -type d -name "logs"`  | name, walking the tree      |
 | `find / -type d -name "x" 2>/dev/null` | name, from root (silence errors) |
-| `mdfind -name "logs"`          | Spotlight index (**macOS**) |
-| `locate logs`                  | prebuilt index (**Linux**)  |
+| `locate logs`                  | a prebuilt name index (fast; run `updatedb` first) |
 | `ls -d */`                     | listing dirs in the current folder |
 | `pwd`                          | telling you where you are now |
 
@@ -364,7 +358,7 @@ skill.
 | Tool                | What it does                                  |
 |---------------------|-----------------------------------------------|
 | `man ls`            | full manual for a command (`q` to quit)       |
-| `ls --help`         | quick help (Linux; macOS often lacks `--help`)|
+| `ls --help`         | quick built-in help summary                    |
 | `type cmd`          | is it a builtin, alias, or program?           |
 | `which cmd`         | path to the program                           |
 | `help if`           | help for Bash **builtins** (`if`, `cd`, etc.) |
@@ -378,10 +372,11 @@ set -x                 # turn tracing on partway through a script
 set +x                 # turn it back off
 ```
 
-**`shellcheck`** — a linter that catches bugs before you run. Install with
-`brew install shellcheck`, then `shellcheck script.sh`. It flags unquoted
-variables, wrong brackets, and the exact gotchas in these notes. **Use it on
-every script** — the practice bank recommends it too.
+**`shellcheck`** — a linter that catches bugs before you run. Install it via your
+package manager (e.g. `apt install shellcheck` / `yum install ShellCheck`), then
+`shellcheck script.sh`. It flags unquoted variables, wrong brackets, and the
+exact gotchas in these notes. **Use it on every script** — the practice bank
+recommends it too.
 
 ### Section 10 — Strict mode (a habit to start early)
 
@@ -1877,38 +1872,36 @@ report="report-$(date +%Y%m%d-%H%M%S).csv"   # report-20260719-020309.csv
 `%F`-style names sort chronologically when listed, which is why timestamped
 filenames use `YYYY-MM-DD` order.
 
-### Section 6 — Date math, and the macOS vs Linux gotcha ⚠️
+### Section 6 — Date arithmetic ("yesterday", "2 days ago")
 
-Doing arithmetic ("yesterday", "2 days ago") is where **macOS and Linux differ**
-— a very common cross-platform trap. Your Mac uses **BSD `date`**; Linux servers
-use **GNU `date`**, and the flags are *not* the same:
+Doing date math — "yesterday", "2 days ago", or converting a timestamp — uses the
+**`-d`** option with a human-readable phrase:
 
-| Goal                     | macOS (BSD) — your machine     | Linux (GNU) — servers          |
-|--------------------------|--------------------------------|--------------------------------|
-| Yesterday's date         | `date -v-1d +%F`               | `date -d "yesterday" +%F`      |
-| Tomorrow                 | `date -v+1d +%F`               | `date -d "tomorrow" +%F`       |
-| 2 days ago               | `date -v-2d +%F`               | `date -d "2 days ago" +%F`     |
-| 1 hour ago               | `date -v-1H +%T`               | `date -d "1 hour ago" +%T`     |
-| Epoch → human date       | `date -r 1784406222`           | `date -d @1784406222`          |
+| Goal                | Command                          |
+|---------------------|----------------------------------|
+| Yesterday's date    | `date -d "yesterday" +%F`        |
+| Tomorrow            | `date -d "tomorrow" +%F`         |
+| 2 days ago          | `date -d "2 days ago" +%F`       |
+| 1 hour ago          | `date -d "1 hour ago" +%T`       |
+| A specific date     | `date -d "2026-01-01" +%A`       |
+| Epoch → human date  | `date -d @1784406222`            |
 
-Verified on your Mac:
 ```bash
-$ date -v-1d +%F        # 2026-07-18   (yesterday)
-$ date -v+1d +%F        # 2026-07-20   (tomorrow)
-$ date -r 1784406222 +"%F %T"   # 2026-07-19 01:53:42
+date -d "yesterday" +%F          # the date 24h ago, as YYYY-MM-DD
+date -d "24 hours ago" +%s       # the Unix timestamp 24h ago (Day 30)
+date -d "2026-01-01" +%s         # convert a date string INTO a timestamp
 ```
 
-> Since you're learning for **Linux DevOps** but developing on **macOS**, write
-> scripts targeting GNU `date` (`-d`), but know they'll need the `-v` form to
-> test locally. Installing GNU coreutils (`brew install coreutils`) gives you
-> `gdate`, which behaves like Linux's `date`. This exact issue comes up in Day 30
-> (last-24-hours log filter) and Day 36 (backups).
+> `-d` accepts flexible phrases: `"next friday"`, `"3 weeks ago"`,
+> `"2026-07-01 12:00"`. This is exactly what Day 30 (last-24-hours filter) and
+> Day 36 (timestamped backups) need — compute a cutoff with `+%s`, then compare
+> timestamps numerically.
 
 #### Key takeaways
 - `date +FORMAT` picks exactly the fields you want; `%F` = date, `%s` = timestamp.
 - **Capture** it with `$(date ...)` — that's the Day 6 concept, command substitution.
-- `-u` = UTC (servers), quote formats containing spaces.
-- Date **math** differs: macOS `date -v-1d`, Linux `date -d "yesterday"`.
+- `-u` = UTC (servers usually run in UTC); quote formats containing spaces.
+- Date **math**: `date -d "yesterday"`, `date -d "2 days ago"`, `date -d @<epoch>`.
 
 ---
 
@@ -1923,9 +1916,8 @@ similar but work very differently. (The file-test operators used here — `-e`,
 #### 1. Symbolic links (symlinks / "soft links")
 
 A **symlink** is a tiny file whose only content is **a path** pointing to another
-file or directory — the Linux version of a **shortcut** (Windows) or **alias**
-(macOS). Open the link and the system transparently redirects you to the
-**target**.
+file or directory — much like a **shortcut** on Windows. Open the link and the
+system transparently redirects you to the **target**.
 
 ```
 softlink  ──points to──►  /real/path/to/file.txt
@@ -2170,11 +2162,6 @@ grep "^mahima:" /etc/passwd     # look up one user's line
 cut -d: -f1 /etc/passwd         # list all usernames (field 1, ":" separator)
 ```
 
-> ⚠️ **macOS difference (your machine):** `/etc/passwd` exists but is only used in
-> single-user mode — it lists a handful of system accounts (`root`, `nobody`).
-> Real users live in **Open Directory**; list them with `dscl . -list /Users`.
-> `id` still works normally. On Linux servers, `/etc/passwd` is the real thing.
-
 ### Section 3 — Where passwords live: `/etc/shadow`
 
 Notice field 2 of `/etc/passwd` is just `x`, not the actual password. The real
@@ -2218,10 +2205,6 @@ The **hash field** (field 2) encodes the algorithm as `$id$salt$hash`:
   password, only a one-way hash it re-computes at login to compare.
 - You never edit `/etc/shadow` by hand — use `passwd`, `chage`, `usermod`.
 
-> ⚠️ **macOS difference:** there is **no `/etc/shadow`** on macOS — password data
-> is kept in **Open Directory** (`/var/db/dslocal/...`), managed via `dscl` /
-> `passwd`. `/etc/shadow` is a **Linux** concept, which is what matters for DevOps.
-
 ### Section 4 — The Day 9 solution
 
 ```bash
@@ -2261,8 +2244,6 @@ fi
   field 2 is just `x`.
 - `/etc/shadow` = the password **hashes** (root-only), split off from passwd for
   security; hashes are one-way, formatted `$id$salt$hash`.
-- macOS uses **Open Directory** instead of these files — `id` works, but the files
-  differ; Linux is the DevOps target.
 
 ---
 
@@ -2389,9 +2370,8 @@ two fall-through variants:
 | `;&`  | **fall through** and run the next branch unconditionally | **bash 4+** |
 | `;;&` | continue **testing** the remaining patterns          | **bash 4+**  |
 
-> ⚠️ `;&` and `;;&` **do not work on your Mac's bash 3.2** — they throw a syntax
-> error (verified). They're fine on Linux servers (bash 4/5). Stick to `;;` for
-> portable scripts; you'll rarely need the others.
+> `;&` and `;;&` require **bash 4+** (standard on modern Linux servers). Stick to
+> plain `;;` unless you specifically need fall-through — you rarely will.
 
 #### Key takeaways
 - `case "$x" in … esac`; each branch ends with **`;;`**; `*)` is the catch-all,
@@ -2465,55 +2445,198 @@ until (( i > 10 )); do echo "$i"; (( i++ )); done   # opposite of while
 
 ## Section 2 — Functions
 
-A **function** is a named, reusable block. Two ways to define (identical):
+A **function** is a **named block of commands** you run over and over by name — how
+you stop repeating yourself and build reusable, readable scripts. Every serious
+script from here uses them. **This section is the complete functions reference.**
+
+#### Why use one
 
 ```bash
-greet() {                 # preferred style
-    echo "Hello, $1"      # $1 = first arg TO THE FUNCTION (not the script)
+greet() {
+    echo "Hello there!"
 }
 
-function greet {  ...  }  # older style, same thing
+greet        # run it — prints "Hello there!"
+greet        # run it again
 ```
 
-Call it like a command: `greet Mahima` (no parentheses, args space-separated).
+- **Don't Repeat Yourself** — write logic once, call it many times.
+- **Readability** — `if is_valid_ip "$x"` reads like English vs a wall of regex.
+- **Testable & composable** — small functions combine into bigger scripts (Day 58's
+  `lib.sh`, Day 60's orchestrator).
+
+#### Defining & calling functions
+
+Two syntaxes — **identical** in behaviour; the first is preferred:
+
+```bash
+name() {          # ← preferred (POSIX)
+    commands
+}
+
+function name {   # ← older bash-only style, same result
+    commands
+}
+```
+
+**Calling** is just the name, like any command — **no parentheses, args separated
+by spaces**:
+
+```bash
+greet Mahima          # ✅ correct
+greet("Mahima")       # ❌ this is NOT how bash calls functions
+```
+
+> ⚠️ A function must be **defined before it's called** — bash reads top to bottom.
+> Put functions near the top, "main" logic below them.
 
 #### Arguments inside a function
 
-Inside a function, `$1 $2 $@ $#` refer to the **function's** arguments, not the
-script's — the same positional-parameter rules as Day 2.
+A function gets its **own** positional parameters — the same `$1`, `$2`, `$@`, `$#`
+rules as a script (Day 2), but scoped to the **function's** call:
 
 ```bash
-add() { echo $(( $1 + $2 )); }
-add 3 4                    # prints 7
+add() {
+    echo "got $# args: $@"
+    echo $(( $1 + $2 ))
+}
+add 3 4          # got 2 args: 3 4  /  7
 ```
 
-#### The TWO ways a function "returns" something — this trips everyone up
+| Inside a function | Means |
+|-------------------|-------|
+| `$1`, `$2`, …     | the function's 1st, 2nd, … argument |
+| `$@`              | all the function's args (each quoted separately) |
+| `$#`              | how many args the function got |
+| `$0`              | still the **script** name (not the function) |
+| `${FUNCNAME[0]}`  | the current function's **name** |
 
-| You want to return… | Use          | Caller reads it with |
-|---------------------|--------------|----------------------|
-| a **success/fail**  | `return 0` / `return 1` (exit code) | `if myfunc; then` |
-| a **value** (text/number) | `echo` the value | `x=$(myfunc)` (capture) |
+**`shift`** drops `$1` and slides everything down (`$2`→`$1`, …) — great when the
+first arg is special and the rest is "everything else" (Day 20's `log`):
 
 ```bash
-is_even() { (( $1 % 2 == 0 )); }        # exit code: true if even (Day 19)
-if is_even 4; then echo "even"; fi
-
-double() { echo $(( $1 * 2 )); }         # VALUE via echo (Day 33)
-result=$(double 7)                        # capture -> 14
+log() {
+    local level="$1"      # first arg = level
+    shift                  # drop it
+    echo "[$level] $*"     # $* = the remaining words (the message)
+}
+log INFO "server started"   # [INFO] server started
 ```
 
-> `return` only sets an **exit code (0–255)** — it can NOT hand back a string or
-> a big number. To return data, `echo` it and capture with `$( )`. Verified.
+#### The TWO ways a function "returns" (the big one)
 
-#### `local` — keep variables inside the function
+The #1 thing beginners get wrong. Bash functions return in **two different ways**,
+depending on whether you want a **status** or a **value**:
+
+| You want to return… | Use              | Caller reads it with     |
+|---------------------|------------------|--------------------------|
+| success / failure (yes-no) | `return N` (exit code) | `if myfunc; then` |
+| a **value** (string/number) | `echo` the value | `x=$(myfunc)` (capture)  |
+
+**Way 1 — `return` = an exit code (status only):**
 
 ```bash
-myfunc() {
-    local tmp="only visible in here"     # without 'local' it leaks to global!
+is_even() {
+    if (( $1 % 2 == 0 )); then
+        return 0        # 0 = success = "true"
+    else
+        return 1        # non-zero = failure = "false"
+    fi
+}
+
+if is_even 4; then echo "even"; fi     # uses the exit code as the condition
+```
+
+> ⚠️ **`return` can ONLY hold a number 0–255** (it's an exit **code**, not a value).
+> Bigger numbers **wrap around** — verified: `return 256`→`0`, `return 300`→`44`,
+> `return -1`→`255`. So you can **never** use `return` to hand back real data.
+
+**Way 2 — `echo` + capture = a value:**
+
+```bash
+double() {
+    echo $(( $1 * 2 ))      # "return" the value by printing it
+}
+
+result=$(double 7)          # capture -> 14
+```
+
+> Key mental model: `return` answers **"did it work?"**; `echo`+`$()` answers
+> **"what's the value?"**. Mixing them up is the classic bug — e.g. writing
+> `return $(( $1 * 2 ))` for a big number silently wraps past 255.
+
+#### Variable scope: `local` vs global
+
+By default **all** variables in bash are **global** — a variable set inside a
+function leaks out and can clobber the rest of your script:
+
+```bash
+name="global"
+leaky()  { name="LEAKED"; }        # no 'local' → overwrites the global!
+leaky;   echo "$name"               # LEAKED   ⚠️
+
+safe()   { local name="inside"; }   # 'local' → confined to the function
+safe;    echo "$name"               # still "global"  ✅
+```
+
+> **Always declare a function's own variables `local`** so a helper doesn't
+> silently change a variable the caller was using (a real senior-level habit).
+
+#### Worked example: `is_even` (Day 19)
+
+Task: a function `is_even` returning success/failure via exit code, used over 1–20.
+
+```bash
+#!/bin/bash
+
+is_even() {
+    (( $1 % 2 == 0 ))       # (( )) sets the exit code: 0 if even, 1 if odd
+}
+
+for i in {1..20}; do
+    if is_even "$i"; then
+        echo "$i is even"
+    fi
+done
+```
+
+Two equivalent forms of the function:
+```bash
+is_even() { (( $1 % 2 == 0 )); }          # concise — relies on (( )) exit code
+
+is_even() {                                # explicit — spells out return
+    if (( $1 % 2 == 0 )); then return 0; else return 1; fi
 }
 ```
-Always declare function-internal variables `local` so they don't clobber
-globals — a classic senior-level habit (Day 20, Day 58).
+Both work because `(( ))` already sets its exit status from the result (Day 3 §3).
+The function plugs straight into `if is_even "$i"` — the function **is** the
+condition (same command-exit-status idea as `id` in Day 9).
+
+#### Gotchas, best practices & the `main` pattern
+
+- **Define before you call** — functions must appear above their first use.
+- **`local` your variables** — or they leak into the global scope.
+- **`return` is 0–255 only** — for data, `echo` + `$()`. Don't `return` a computed
+  value that might exceed 255.
+- **Quote the args** — `myfunc "$var"`, and inside use `"$1"`, `"$@"` (Day 10).
+- **One job per function** — small, named, testable. Compose them.
+- For bigger scripts: helper functions up top, then a `main()`, then a single
+  `main "$@"` at the bottom (Day 56):
+
+```bash
+main() {
+    log INFO "starting"
+    # top-level logic here
+}
+main "$@"        # pass the script's args into main
+```
+
+#### Functions — key takeaways
+- Define with `name() { ... }`; call with just `name arg1 arg2` (no parens).
+- Inside, `$1`/`$@`/`$#` are the **function's** args; `shift` consumes from the front.
+- **Return status** with `return` (0–255 exit code) → use in `if`.
+- **Return data** with `echo` → capture with `$( )`.
+- Always `local` a function's variables to avoid leaks.
 
 ## Section 3 — The text-processing toolkit: which tool when?
 
@@ -2632,8 +2755,8 @@ grep -E "ERROR|WARN|FATAL" app.log        # any of the three
 grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}" log  # lines starting with a date
 grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" access.log   # pull IPs (Day 23)
 ```
-> `-P` (Perl regex, `\d` `\b` lookaheads) exists on Linux GNU grep but **not** on
-> macOS BSD grep — prefer `-E` for portability.
+> `-P` (Perl regex — `\d`, `\b`, lookaheads) is available on GNU grep. `-E` covers
+> most needs and is more portable; reach for `-P` only when you need Perl features.
 
 #### Real-world one-liners you'll actually use
 
@@ -2683,9 +2806,8 @@ Anatomy of `s/old/new/g`: **s** = substitute, `/` are separators, then the flags
 | `2`  | replace only the **2nd** match | `s/foo/X/2` |
 | `p`  | **print** the line if a swap happened (with `-n`) | `sed -n 's/a/b/p'` |
 
-> ⚠️ **macOS gotcha:** `s/foo/X/2g` (replace *from the 2nd match onward*) works on
-> Linux GNU sed but **errors on your Mac's BSD sed** (`more than one number or 'g'`).
-> Verified. Stick to `g` or a single number for portability.
+> `s/foo/X/2g` replaces **from the 2nd match onward** on each line — useful when
+> you want to leave the first occurrence untouched.
 
 #### Different delimiters — avoid "leaning-toothpick" `/`
 
@@ -2764,33 +2886,26 @@ sed 's/a/A/; s/c/C/'          file      # or separate with ;
 ### Insert / append / change lines — `i` / `a` / `c`
 
 ```bash
-sed '2i\
-NEW LINE'   file        # INSERT a line BEFORE line 2
-sed '2a\
-NEW LINE'   file        # APPEND a line AFTER line 2
-sed '3c\
-REPLACED'   file        # CHANGE (replace) line 3 entirely
+sed '2i NEW LINE'  file     # INSERT a line BEFORE line 2
+sed '2a NEW LINE'  file     # APPEND a line AFTER line 2
+sed '3c REPLACED'  file     # CHANGE (replace) line 3 entirely
 ```
-> ⚠️ **macOS gotcha:** BSD sed requires the `a\` + real newline form shown above.
-> Linux GNU sed also allows the compact `sed '2a NEW LINE'`. Verified the
-> backslash form works on your Mac.
+> `i` = insert before the line, `a` = append after it, `c` = replace the whole
+> line. (You can also target a pattern: `sed '/^\[db\]/a host=localhost' file`.)
 
-### ⚠️ In-place editing `-i` — the big macOS vs Linux gotcha (Day 25)
+### In-place editing `-i` (Day 25)
 
-`-i` makes sed **change the file directly** instead of printing. The syntax
-differs by platform — the #1 sed portability trap:
+By default sed prints to stdout and leaves the file untouched. **`-i`** makes it
+**edit the file directly**:
 
-| Platform            | Command                                   |
-|---------------------|-------------------------------------------|
-| **Linux** (GNU sed) | `sed -i 's/a/b/' file` (no backup)        |
-| **Linux** + backup  | `sed -i.bak 's/a/b/' file`                |
-| **macOS** (BSD sed) | `sed -i '' 's/a/b/' file`  ← **needs the `''`** |
-| **macOS** + backup  | `sed -i.bak 's/a/b/' file`                |
+```bash
+sed -i 's/a/b/' file          # edit in place, NO backup
+sed -i.bak 's/a/b/' file      # edit in place, keep the original as file.bak
+```
 
-> On your Mac, `sed -i 's/a/b/' file` **errors** — BSD `-i` requires a backup
-> suffix argument (use `''` for none). **`sed -i.bak` is the portable form** that
-> works on both, and it keeps a safety backup. Always preview to stdout first,
-> then apply with `-i.bak` (Day 25).
+> ⚠️ `-i` is **destructive** — it overwrites the file. Best practice: **preview to
+> stdout first**, then apply with **`-i.bak`** so you keep a safety copy
+> (`file.bak`). Day 25 asks for exactly that flow: preview, then in-place + backup.
 
 ### Real-world sed one-liners
 
@@ -2811,7 +2926,7 @@ sed 's/^/    /' file                  # indent every line by 4 spaces
   or `/regex/`.
 - Use a different delimiter (`s|...|...|`) for paths; `&`/`\1` reuse matched text
   (with `-E` for groups).
-- macOS BSD sed differs: `-i ''`, no `/2g`, and `a`/`i`/`c` need the `\`+newline form.
+- Combine commands with `;` or `-e`; `i`/`a`/`c` insert/append/change whole lines.
 
 ## Section 6 — `awk` (field-by-field processing)
 
@@ -3144,10 +3259,9 @@ ping -c 1 host        # -c 1 = send just ONE packet (else it runs forever)
 ```
 Exit code `0` = reachable, non-zero = not (an exit-code check, like Day 9/12).
 
-> ⚠️ macOS vs Linux: the **timeout** flag differs. Linux `-W 1` = wait 1 **second**;
-> macOS `-W` is in **milliseconds** (and also has `-t` for total timeout). So
-> `ping -c1 -W1` behaves differently per platform — check `man ping`. Use `-c 1`
-> (portable) and add the timeout flag your platform expects.
+> Add **`-W 1`** to cap the wait for a reply (on Linux, `-W` is in **seconds**).
+> So `ping -c 1 -W 1 host` = "one packet, give up after 1 second" — the form you
+> want in a script so an unreachable host never makes it hang (Day 34).
 
 #### `find` (Day 31) — recursive file search + actions
 ```bash
@@ -3169,8 +3283,8 @@ kubectl get pods -n <namespace> # pods in a namespace
 
 #### `seq` and date math (Days 29, 30)
 - `seq 1 "$N"` → generate `1..N` for a counted retry loop (Day 29).
-- Date arithmetic for "last 24 hours" (Day 30): Linux `date -d '24 hours ago' +%s`
-  vs macOS `date -v-24H +%s` (Day 6 §6). Compare Unix timestamps (`+%s`).
+- Date arithmetic for "last 24 hours" (Day 30): `date -d '24 hours ago' +%s`
+  (Day 6 §6). Compare Unix timestamps (`+%s`) numerically.
 
 ## Section 12 — Habits to carry into every Tier 2 script
 
@@ -3184,8 +3298,8 @@ kubectl get pods -n <namespace> # pods in a namespace
 - **Prefer parameter expansion** over spawning `basename`/`dirname`/`cut` when
   you're just slicing one string (Section 9) — fewer processes, faster.
 - **`while IFS= read -r`**, never `for line in $(cat)` (Section 8).
-- **Know your platform:** `sed -i`, `date`, and `ping` flags differ macOS↔Linux.
-  Write for Linux (the server), know the macOS form to test locally.
+- **Preview destructive commands first:** run `sed`/`find` *without* `-i`/`-delete`
+  to see what they'd affect, then add the flag once the output looks right.
 
 #### Tier 2 key takeaways
 - `for` for lists/globs/ranges, `while` for conditions and reading files.
@@ -3193,219 +3307,6 @@ kubectl get pods -n <namespace> # pods in a namespace
 - `grep` finds, `cut` slices columns, `awk` does field logic/math, `sed` edits.
 - `sort | uniq -c | sort -rn` = count-by-frequency; `uniq` needs a `sort` first.
 - `${##}`/`${%%}` slice paths; `getopts` parses real flags; quote everything.
-
----
-
-## Day 19 — Functions in Bash (end to end)
-
-> The Tier 2 primer §2 is the quick overview; this is the **full reference**.
-> Functions are how you stop repeating yourself and start building reusable,
-> readable scripts. Master this — every serious script from here uses functions.
-
-### Section 1 — What a function is & why use one
-
-A **function** is a **named block of commands** you can run over and over by name.
-Instead of copy-pasting the same 5 lines everywhere, you write them once and call
-them.
-
-```bash
-greet() {
-    echo "Hello there!"
-}
-
-greet        # run it — prints "Hello there!"
-greet        # run it again
-```
-
-Why they matter:
-- **Don't Repeat Yourself** — write logic once, call it many times.
-- **Readability** — `if is_valid_ip "$x"` reads like English vs a wall of regex.
-- **Testable & composable** — small functions combine into bigger scripts (Day 58's
-  `lib.sh`, Day 60's orchestrator).
-
-### Section 2 — Defining & calling functions
-
-Two syntaxes — **identical** in behaviour; the first is preferred:
-
-```bash
-name() {          # ← preferred (POSIX)
-    commands
-}
-
-function name {   # ← older bash-only style, same result
-    commands
-}
-```
-
-**Calling** is just the name, like any command — **no parentheses, args separated
-by spaces**:
-
-```bash
-greet Mahima          # ✅ correct
-greet("Mahima")       # ❌ this is NOT how bash calls functions
-```
-
-> ⚠️ A function must be **defined before it's called** — bash reads top to bottom.
-> Put your functions near the top, and the "main" logic below them.
-
-### Section 3 — Arguments inside a function
-
-A function gets its **own** positional parameters — the same `$1`, `$2`, `$@`,
-`$#` rules as a script (Day 2), but scoped to the **function's** call, not the
-script's.
-
-```bash
-add() {
-    echo "got $# args: $@"
-    echo $(( $1 + $2 ))
-}
-add 3 4          # got 2 args: 3 4  /  7
-```
-
-| Inside a function | Means |
-|-------------------|-------|
-| `$1`, `$2`, …     | the function's 1st, 2nd, … argument |
-| `$@`              | all the function's args (each quoted separately) |
-| `$#`              | how many args the function got |
-| `$0`              | still the **script** name (not the function) |
-| `${FUNCNAME[0]}`  | the current function's **name** (verified) |
-
-#### `shift` — consume arguments from the front
-
-`shift` **drops `$1` and slides everything down** (`$2`→`$1`, `$3`→`$2`, …). Great
-when the first arg is special and the rest is "everything else" (Day 20's `log`):
-
-```bash
-log() {
-    local level="$1"      # first arg = level
-    shift                  # drop it
-    echo "[$level] $*"     # $* = the remaining words (the message)
-}
-log INFO "server started"   # [INFO] server started
-```
-
-### Section 4 — The TWO ways a function "returns" (the big one)
-
-This is the #1 thing beginners get wrong. Bash functions return in **two totally
-different ways**, depending on whether you want a **status** or a **value**:
-
-| You want to return… | Use              | Caller reads it with     |
-|---------------------|------------------|--------------------------|
-| success / failure (yes-no) | `return N` (exit code) | `if myfunc; then` |
-| a **value** (string/number) | `echo` the value | `x=$(myfunc)` (capture)  |
-
-#### Way 1 — `return` = an exit code (status only)
-
-```bash
-is_even() {
-    if (( $1 % 2 == 0 )); then
-        return 0        # 0 = success = "true"
-    else
-        return 1        # non-zero = failure = "false"
-    fi
-}
-
-if is_even 4; then echo "even"; fi     # uses the exit code as the condition
-```
-
-> ⚠️ **`return` can ONLY hold a number 0–255** (it's an exit **code**, not a value).
-> Bigger numbers **wrap around** — verified: `return 256`→`0`, `return 300`→`44`,
-> `return -1`→`255`. So you can **never** use `return` to hand back real data.
-
-#### Way 2 — `echo` + capture = a value
-
-To return actual data (a number over 255, a string, a computed result), **`echo`
-it** and have the caller **capture** it with command substitution (Day 13):
-
-```bash
-double() {
-    echo $(( $1 * 2 ))      # "return" the value by printing it
-}
-
-result=$(double 7)          # capture -> 14
-echo "$result"
-```
-
-> Key mental model: `return` answers **"did it work?"**; `echo`+`$()` answers
-> **"what's the value?"**. Mixing them up is the classic bug — e.g. writing
-> `return $(( $1 * 2 ))` for a big number silently wraps past 255.
-
-### Section 5 — Variable scope: `local` vs global
-
-By default, **all** variables in bash are **global** — a variable set inside a
-function leaks out and can clobber the rest of your script:
-
-```bash
-name="global"
-leaky()  { name="LEAKED"; }        # no 'local' → overwrites the global!
-leaky;   echo "$name"               # LEAKED   ⚠️
-
-safe()   { local name="inside"; }   # 'local' → confined to the function
-safe;    echo "$name"               # still "global"  ✅
-```
-
-> **Always declare a function's own variables `local`.** Verified above: without
-> `local`, `name` leaked; with it, the global was untouched. This prevents
-> maddening bugs where a helper function silently changes a variable the caller
-> was using (a real senior-level habit — Day 58).
-
-### Section 6 — The Day 19 worked example
-
-Task: a function `is_even` that returns success/failure via exit code, used in a
-loop over 1–20.
-
-```bash
-#!/bin/bash
-
-is_even() {
-    (( $1 % 2 == 0 ))       # (( )) sets the exit code: 0 if even, 1 if odd
-}
-
-for i in {1..20}; do
-    if is_even "$i"; then
-        echo "$i is even"
-    fi
-done
-```
-
-Two equivalent forms of the function:
-```bash
-is_even() { (( $1 % 2 == 0 )); }          # concise — relies on (( )) exit code
-
-is_even() {                                # explicit — spells out return
-    if (( $1 % 2 == 0 )); then return 0; else return 1; fi
-}
-```
-Both work because `(( ))` already sets its exit status from the result (Day 3 §3).
-The function then plugs straight into `if is_even "$i"` — the function **is** the
-condition (see Day 9/12 for the same command-exit-status idea).
-
-### Section 7 — Gotchas & best practices
-
-- **Define before you call** — functions must appear above their first use.
-- **`local` your variables** — or they leak into the global scope (§5).
-- **`return` is 0–255 only** — for data, `echo` + `$()` (§4). Don't `return` a
-  computed value that might exceed 255.
-- **Quote the args** — `myfunc "$var"`, and inside use `"$1"`, `"$@"` (Day 10).
-- **One job per function** — small, named, testable. Compose them.
-- **A common structure** for bigger scripts: helper functions up top, then a
-  `main()` function, then a single `main "$@"` call at the bottom (Day 56).
-
-```bash
-main() {
-    # top-level logic here
-    log INFO "starting"
-    ...
-}
-main "$@"        # pass the script's args into main
-```
-
-#### Key takeaways
-- Define with `name() { ... }`; call with just `name arg1 arg2` (no parens).
-- Inside, `$1`/`$@`/`$#` are the **function's** args; `shift` consumes from the front.
-- **Return status** with `return` (0–255 exit code) → use in `if`.
-- **Return data** with `echo` → capture with `$( )`.
-- Always `local` a function's variables to avoid leaks.
 
 ---
 
