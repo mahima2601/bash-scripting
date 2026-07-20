@@ -2750,24 +2750,75 @@ awk 'BEGIN {print "Report:"} {print $1} END {print NR" rows"}' file
 
 #### Math & totals (awk's superpower)
 
-awk keeps variables across lines, so summing a column is trivial:
+The key idea: **awk runs your `{ }` block once for _every_ line, and variables
+keep their value between lines.** So a variable can *accumulate* as awk walks down
+the file.
 
 ```bash
-awk '{sum += $2} END {print sum}' file            # total of column 2
-awk '{sum += $2} END {printf "avg=%.1f\n", sum/NR}' file   # average, formatted
+awk '{sum += $2} END {print sum}' file      # total of column 2
 ```
-> Verified: on ages 30/25/35 → `total=90 avg=30.0`. `printf` formats numbers
-> (`%d` integer, `%.1f` one decimal, `%s` string) — cleaner than `print`.
+
+Take it apart:
+- `sum += $2` means `sum = sum + $2` — "add this line's field 2 onto `sum`."
+- `sum` **starts at 0 automatically** (awk treats an unset variable as 0/empty —
+  no need to initialise it).
+- The `{ }` block runs **per line**, so `sum` grows line by line.
+- **`END { print sum }`** runs **once, after the last line** — that's where the
+  final total lives.
+
+Watch it accumulate over the file (name / age / dept) — verified trace:
+
+| Line read           | `$2` (age) | `sum += $2` → `sum` |
+|---------------------|------------|---------------------|
+| `alice 30 eng`      | 30         | 0 + 30 = **30**     |
+| `bob 25 sales`      | 25         | 30 + 25 = **55**    |
+| `carol 35 eng`      | 35         | 55 + 35 = **90**    |
+| *(END block runs)*  | —          | prints **90**       |
+
+Why the total must go in `END`: if you `print sum` inside the main `{ }` block,
+it prints after *every* line (30, 55, 90). You only want the **final** value, so
+you print it in `END`.
+
+```bash
+awk '{sum += $2} END {printf "avg = %.1f\n", sum/NR}' file   # 90/3 = avg = 30.0
+```
+`NR` is the line count at the end (3 here), so `sum/NR` is the average. **`printf`**
+formats numbers precisely — `%d` = integer, `%.1f` = one decimal, `%s` = string —
+whereas plain `print` gives you no control over decimals.
 
 #### Grouping & counting with associative arrays
 
-This is awk at its best — count occurrences by key in one pass (a mini GROUP BY):
+An **associative array** is a lookup table with **named keys** instead of number
+indexes — like a Python dict or a real-world tally sheet ("engineering: ||, sales:
+|"). In awk you don't declare it; you just use it, and any key starts at 0.
 
 ```bash
 awk '{count[$3]++} END {for (k in count) print k, count[k]}' file
 ```
-> Verified: counted departments → `engineering 2`, `sales 1`. This is how you'd
-> count HTTP status codes (Day 53) or requests per IP.
+
+The one line that does the work is `count[$3]++`:
+- `$3` is this line's 3rd field (the department) — it becomes the **key**.
+- `count[$3]` is the tally for that key (starts at 0 automatically).
+- `++` adds 1 to it.
+- So each line means *"add one to the counter for whatever department is on this
+  line."*
+
+Watch the array fill up — verified trace:
+
+| Line read       | `$3` (dept) | effect               | array so far            |
+|-----------------|-------------|----------------------|-------------------------|
+| `alice 30 eng`  | engineering | `count[engineering]++` | `engineering→1`       |
+| `bob 25 sales`  | sales       | `count[sales]++`       | `engineering→1, sales→1` |
+| `carol 35 eng`  | engineering | `count[engineering]++` | `engineering→2, sales→1` |
+
+Then the **`END`** block walks every key and prints the tally:
+- `for (k in count)` — loop over each **key** `k` that exists in the array.
+- `print k, count[k]` — print the key and its count → `engineering 2`, `sales 1`.
+
+> This is a **one-pass GROUP BY** — no need to sort first, awk tallies as it goes.
+> Swap `$3` for any field and you can count **anything**: HTTP status codes
+> (Day 53), requests per IP, errors per host. It's one of the most powerful
+> one-liners in all of shell.
 
 #### Real-world one-liners
 
