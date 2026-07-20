@@ -2536,28 +2536,123 @@ This one line = "top IP addresses hitting 404s" (basically Day 23).
 
 ## Section 4 — `grep` (find lines by pattern)
 
+`grep PATTERN file` prints every **line** that matches PATTERN. It's the single
+most-used text tool in DevOps — searching logs, configs, code, command output.
+
 ```bash
-grep "ERROR" app.log          # lines containing ERROR
-grep -i "error" app.log       # -i = case-insensitive
-grep -c "ERROR" app.log       # -c = COUNT matching lines (Day 22)
-grep -v "DEBUG" app.log       # -v = INVERT: lines NOT matching (Day 26)
-grep -n "ERROR" app.log       # -n = show line numbers
-grep -r "TODO" .              # -r = recursive through a directory
-grep -E "ERROR|WARN" app.log  # -E = extended regex (enables | ( ) + )
-grep -o "[0-9]\+" app.log     # -o = print only the matched part
+grep "ERROR" app.log        # lines containing ERROR
+grep "ERROR" *.log          # search many files (output is prefixed with filename)
+command | grep "ERROR"      # filter another command's output (very common)
 ```
 
-**Anchors** make patterns precise (Day 22 hint):
+#### The essential flags
 
-| Pattern     | Matches                          |
-|-------------|----------------------------------|
-| `^ERROR`    | lines **starting** with ERROR    |
-| `done$`     | lines **ending** with done       |
-| `^$`        | **empty** lines                  |
-| `^\s*#`     | lines that are comments (Day 26) |
+| Flag | Meaning | Example |
+|------|---------|---------|
+| `-i` | case-**i**nsensitive (`error`=`ERROR`) | `grep -i error log` |
+| `-c` | **c**ount matching **lines** (a number) | `grep -c ERROR log` |
+| `-v` | in**v**ert — lines that **don't** match | `grep -v DEBUG log` |
+| `-n` | show line **n**umbers | `grep -n ERROR log` |
+| `-r` | **r**ecursive through a directory tree | `grep -r TODO .` |
+| `-l` | **l**ist only the **filenames** that match | `grep -rl TODO .` |
+| `-w` | match whole **w**ords only | `grep -w warn log` |
+| `-x` | match whole **lines** only (exact) | `grep -x DONE log` |
+| `-o` | print **o**nly the matched text, not the line | `grep -o '[0-9]*' log` |
+| `-q` | **q**uiet — no output, just the exit code | `grep -q ERROR log` |
+| `-E` | **E**xtended regex (enables `\|` `()` `+` `?`) | `grep -E 'ERR\|WARN'` |
+| `-A n` | print n lines **A**fter each match | `grep -A2 ERROR log` |
+| `-B n` | print n lines **B**efore each match | `grep -B2 ERROR log` |
+| `-C n` | print n lines of **C**ontext (before+after) | `grep -C2 ERROR log` |
 
-> `grep -E` (or `egrep`) turns on `|`, `()`, `+`, `?` without backslashes.
-> Verified: `grep -cE '^(ERROR|WARN)'` counted 3 lines.
+> ⚠️ **Case matters:** `-c` (lowercase) = **count**; `-C` (uppercase) = **context**.
+> A very common mix-up (you hit it in Day 22).
+
+#### grep's exit code — why it works inside `if`
+
+`grep` reports whether it found anything through its **exit status** — which is
+what lets you use it as a condition (like Day 9's `id`):
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | at least one line **matched** |
+| `1` | **no** lines matched |
+| `2` | an **error** (e.g. file not found) |
+
+```bash
+if grep -q "ERROR" app.log; then       # -q = silent, just the exit code
+    echo "errors found!"
+fi
+```
+> Verified: `grep -q` returned `0` when found, `1` when not. Pair `-q` with `if`
+> whenever you only care *whether* something exists, not what it is.
+
+#### Counting: lines vs occurrences (the Day 22 lesson)
+
+| Command | Counts | A line with 3 matches counts as |
+|---------|--------|--------------------------------|
+| `grep -c "warn" f`         | matching **lines**       | 1 |
+| `grep -o "warn" f \| wc -l`| total **occurrences**    | 3 |
+
+`-c` answers "how many lines contain it"; `-o` + `wc -l` answers "how many times
+total." Verified: same file gave `-c`=3 vs occurrences=5.
+
+#### Context — reading *around* a match (`-A` / `-B` / `-C`)
+
+Great for logs: see what happened just before/after an error.
+
+```bash
+grep -A3 "Exception" app.log     # the match + 3 lines after (the stack trace)
+grep -B2 "ERROR"     app.log     # 2 lines of lead-up before each error
+grep -C2 "ERROR"     app.log     # 2 lines both sides
+```
+In the output, a `:` after the line marks the **match**, a `-` marks **context**.
+
+#### Anchors & precision
+
+Make patterns exact so you don't over-match substrings:
+
+| Pattern   | Matches                              |
+|-----------|--------------------------------------|
+| `^ERROR`  | lines **starting** with ERROR        |
+| `done$`   | lines **ending** with done           |
+| `^$`      | **empty** lines                      |
+| `^\s*#`   | comment lines (Day 26)               |
+| `-w warn` | `warn` as a whole word (not `warning`) |
+| `-x DONE` | a line that is **exactly** `DONE`    |
+
+#### Regex: basic vs extended (`-E`)
+
+- **Basic** grep: `.` `*` `^` `$` `[]` work; but `+` `?` `|` `()` need backslashes
+  (`\+`, `\|`, `\(`).
+- **`-E`** (extended, aka `egrep`): `+` `?` `|` `()` work **without** backslashes.
+  Use `-E` whenever your pattern has alternation or groups:
+
+```bash
+grep -E "ERROR|WARN|FATAL" app.log        # any of the three
+grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}" log  # lines starting with a date
+grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" access.log   # pull IPs (Day 23)
+```
+> `-P` (Perl regex, `\d` `\b` lookaheads) exists on Linux GNU grep but **not** on
+> macOS BSD grep — prefer `-E` for portability.
+
+#### Real-world one-liners you'll actually use
+
+```bash
+grep -rn "TODO" src/                     # every TODO with file:line
+grep -c ERROR app.log                    # error count (Day 22)
+grep -v "^#" config | grep -v "^$"       # drop comments and blanks (Day 26)
+grep -i "failed" *.log                   # case-insensitive across logs
+ps aux | grep -v grep | grep nginx       # find nginx processes (skip the grep itself)
+grep -A5 "panic" app.log                 # a crash + the 5 lines after it
+grep -oE "[0-9.]+" access.log | sort | uniq -c   # count numeric tokens
+```
+
+#### Key takeaways
+- `grep PATTERN file` finds **lines**; `-i` ignore case, `-v` invert, `-n` numbers,
+  `-r` recursive, `-w` whole word.
+- **Exit code:** 0=found, 1=not found → use `grep -q` inside `if`.
+- **`-c` = lines**, `-o | wc -l` = occurrences. `-c` ≠ `-C` (context).
+- **`-E`** for `|`, `()`, `+`, `?` without backslashes. Anchor with `^`/`$`/`-w`.
 
 ## Section 5 — `sed` (stream editor: find/replace, delete)
 

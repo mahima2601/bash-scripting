@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Day 22. Given a log file, count how many lines contain 
-#"ERROR", "WARN", and "INFO" respectively. Concept: grep -c. Hint: anchor your patterns.
+# Day 23. Extract all unique IP addresses from a web server 
+#access log and print them sorted by frequency 
+#(most frequent first). Concept: awk/grep + sort + uniq -c. Hint: sort | uniq -c | sort -rn
 
 
 file=$1
