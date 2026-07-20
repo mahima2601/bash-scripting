@@ -396,14 +396,252 @@ set -euo pipefail
 Without these, a failing command is silently ignored and the script keeps going
 with bad data — the source of many real outages.
 
+### Section 11 — Exit codes, `$?`, and chaining (`&&`, `||`, `;`)
+
+**Every command returns an exit code** when it finishes — a number the shell uses
+to know whether it worked:
+
+- **`0` = success**, **non-zero (1–255) = failure**. (Backwards from "true=1"!)
+- **`$?`** holds the exit code of the **last** command you ran.
+
+```bash
+ls /tmp;      echo "$?"    # 0  (worked)
+ls /nope;     echo "$?"    # non-zero (failed)
+```
+
+This is the engine behind `if` (Day 9/12), functions (§2), and everything with a
+condition. **Chain commands** based on success/failure:
+
+| Operator | Runs the next command… | Example |
+|----------|------------------------|---------|
+| `A ; B`  | **always** (just sequence) | `cd /tmp ; ls` |
+| `A && B` | only if **A succeeded** (exit 0) | `mkdir d && cd d` |
+| `A \|\| B`| only if **A failed** (non-zero) | `ping -c1 host \|\| echo "down"` |
+
+```bash
+grep -q ERROR log && echo "errors found"       # do B only if grep matched
+mkdir /data || echo "couldn't make dir" >&2     # do B only if mkdir failed
+command_that_might_fail || exit 1               # bail out on failure
+```
+> `&&`/`||` are **short-circuit**: `B` runs only when needed. This is why `set -e`
+> (§10) matters — it makes the *script itself* stop on the first non-zero exit.
+> Your own scripts should `exit 0` on success, `exit 1+` on failure (Day 8, 14).
+
+### Section 12 — Environment variables, `export` & `$PATH`
+
+A **variable** you set is local to your shell. **`export`** promotes it to an
+**environment variable** that child processes (and scripts you run) inherit:
+
+```bash
+name="Mahima"                 # shell variable — only THIS shell sees it
+export API_URL="http://..."   # environment variable — child processes inherit it
+```
+(This is the subshell inheritance from Day 1: exported vars flow **down** to
+children, never back **up**.)
+
+**Common environment variables:**
+
+| Variable | Holds |
+|----------|-------|
+| `$HOME`  | your home directory (`/home/you`) |
+| `$USER`  | your username |
+| `$PATH`  | the list of directories the shell searches for commands |
+| `$PWD`   | current directory |
+| `$SHELL` | your login shell |
+
+**`$PATH` — how the shell finds commands.** When you type `ls`, the shell looks
+through each colon-separated directory in `$PATH` until it finds an executable
+named `ls`:
+```bash
+echo "$PATH"          # /usr/local/bin:/usr/bin:/bin:...
+which ls              # /bin/ls  — which dir it was found in
+```
+- Put your own scripts in a `$PATH` dir (or add one: `export PATH="$HOME/bin:$PATH"`)
+  to run them by name without `./`.
+- `env` prints all environment variables; `printenv VAR` prints one.
+- Day 41 (reading a `.env` file) is about loading variables like these safely.
+
+### Section 13 — Processes, signals & background jobs
+
+A running program is a **process**, identified by a **PID** (process ID).
+
+```bash
+ps aux              # every process (user, PID, CPU, MEM, command)
+ps aux | grep nginx # find a specific process
+top                 # live, sorted view (q to quit)
+echo $$             # the PID of your current shell
+pgrep nginx         # just the PIDs matching a name
+```
+
+**Signals** — how you tell a process to do something (usually stop):
+
+| Signal | Number | Meaning |
+|--------|--------|---------|
+| `SIGHUP`  | 1  | terminal closed / reload config |
+| `SIGINT`  | 2  | **Ctrl-C** — interrupt |
+| `SIGKILL` | 9  | **force kill** — can't be caught or ignored |
+| `SIGTERM` | 15 | **graceful stop** (the default `kill` sends this) |
+
+```bash
+kill 1234           # send SIGTERM (ask nicely) to PID 1234
+kill -9 1234        # send SIGKILL (force) — last resort
+pkill nginx         # kill by name
+```
+> **Prefer `SIGTERM` (plain `kill`)** so the program can clean up; use `-9` only
+> when it won't die. `trap` (Day 38) lets *your* script catch signals to clean up
+> on exit — e.g. remove a temp dir on Ctrl-C.
+
+**Background jobs** — run something without blocking the shell:
+
+```bash
+long_task &          # & runs it in the BACKGROUND; shell continues
+jobs                 # list background jobs
+wait                 # wait for all background jobs to finish
+nohup long_task &    # keep running even after you log out
+```
+Verified: a `&` job runs while the main script continues, and `wait` blocks until
+it's done. This is the basis of Day 46 (parallel pings) and Day 57 (process
+monitoring).
+
+### Section 14 — Networking essentials (for a DevOps engineer)
+
+Scripts constantly check "is this host up? is this service responding?" — so know
+the vocabulary:
+
+**IP address** — a machine's address on a network. IPv4 = four numbers 0–255
+(`192.168.1.10`, Day 32). Special ones:
+
+| Address | Means |
+|---------|-------|
+| `127.0.0.1` / `localhost` | **this machine** (loopback) |
+| `0.0.0.0` | "all interfaces" — bind here to accept connections from anywhere (Day 25) |
+| `10.x` / `172.16–31.x` / `192.168.x` | **private** networks (internal) |
+
+**Port** — a numbered "door" on a host for a specific service. `IP:port`
+identifies an endpoint (`127.0.0.1:8080`). Common ports:
+
+| Port | Service |
+|------|---------|
+| 22   | SSH |
+| 80   | HTTP |
+| 443  | HTTPS |
+| 5432 | PostgreSQL |
+| 6379 | Redis |
+| 3306 | MySQL |
+
+**DNS / hostnames** — names (`google.com`) resolve to IPs via DNS. `ping`/`curl`
+resolve the name first (Day 34).
+
+**HTTP status codes** — what a web server replies (Day 40 health checks):
+
+| Code | Meaning |
+|------|---------|
+| `2xx` (200) | **success** |
+| `3xx` (301/302) | redirect |
+| `4xx` (404, 401) | **client error** (not found, unauthorized) |
+| `5xx` (500, 503) | **server error** |
+
+**`curl` — the tool for talking to HTTP endpoints** (Day 40):
+
+```bash
+curl https://example.com                          # fetch a URL
+curl -s -o /dev/null -w '%{http_code}' URL         # print JUST the status code
+curl -sf URL || echo "endpoint down"               # -f = fail on 4xx/5xx
+```
+Verified: `curl -s -o /dev/null -w '%{http_code}' https://example.com` → `200`.
+- `-s` silent, `-o /dev/null` discard the body, `-w '%{http_code}'` print the code.
+- **TCP vs UDP:** TCP = reliable, connection-based (HTTP, SSH); UDP = fast,
+  fire-and-forget (DNS, some streaming). You mostly meet TCP.
+- Related tools: `wget` (download), `ss -tlnp` / `netstat` (what's listening),
+  `dig`/`nslookup` (DNS lookups), `nc`/`telnet host port` (test a port).
+
+### Section 15 — Arrays (indexed & associative)
+
+A variable holds one value; an **array** holds many.
+
+**Indexed arrays** (numbered from 0):
+```bash
+fruits=(apple banana cherry)     # create
+echo "${fruits[0]}"              # apple           (one element)
+echo "${fruits[@]}"              # all elements
+echo "${#fruits[@]}"            # 3               (count)
+fruits+=(date)                   # append
+for f in "${fruits[@]}"; do echo "$f"; done   # loop (quote it!)
+```
+> **Always `"${arr[@]}"` with quotes** to keep elements with spaces intact
+> (same rule as `"$@"`, Day 10). Verified: create, index, count, append all work.
+
+**Associative arrays** (string keys — like a Python dict / map):
+```bash
+declare -A color                 # MUST declare with -A first
+color[apple]=red
+color[sky]=blue
+echo "${color[apple]}"          # red
+for k in "${!color[@]}"; do      # ${!color[@]} = the KEYS
+    echo "$k -> ${color[$k]}"
+done
+```
+> ⚠️ Associative arrays need **bash 4+** (standard on Linux servers). They're the
+> tool for Day 53 (counting HTTP status codes) — the same "count by key" idea as
+> awk's `arr[$k]++` (Tier 2 §6).
+
+### Section 16 — Data formats you'll meet (JSON, YAML, CSV)
+
+DevOps scripts constantly read structured data. Recognise these:
+
+- **JSON** — APIs and `kubectl -o json` output. Parse it with **`jq`** (Day 42),
+  never with grep/awk:
+  ```bash
+  echo '{"name":"web","replicas":3}' | jq '.replicas'    # 3
+  kubectl get pods -o json | jq -r '.items[].metadata.name'
+  ```
+- **YAML** — Kubernetes manifests, CI configs, Ansible. Indentation-based; `${VAR}`
+  placeholders are common (Day 47 templating with `envsubst`).
+- **CSV** — comma-separated tables. Slice with `cut -d,` or `awk -F,` (Day 24).
+
+> Rule: for JSON, **use `jq`** (it understands structure); for flat CSV/columns,
+> `cut`/`awk` are fine. Don't try to parse JSON with regex — nested structures
+> break it.
+
+### Section 17 — Finding & installing tools
+
+**Is a command available?** (Day 49 prerequisite checks):
+```bash
+command -v jq >/dev/null || echo "jq not installed" >&2   # the portable check
+which jq          # path if found
+type jq           # is it a builtin, alias, function, or program?
+```
+`command -v` is the one to use in scripts — it's built-in and returns non-zero if
+the command is missing, so it drops into an `if` (Day 49).
+
+**Installing tools** (Linux package managers differ by distro):
+
+| Distro family | Install command |
+|---------------|-----------------|
+| Debian/Ubuntu | `apt install <pkg>` (or `apt-get`) |
+| RHEL/CentOS/Fedora | `yum install <pkg>` / `dnf install <pkg>` |
+| Alpine | `apk add <pkg>` |
+
+> A robust script **checks for its dependencies first** (`command -v`) and fails
+> fast with a clear message if something's missing (Day 49), rather than crashing
+> halfway through.
+
 #### Day 0 key takeaways
 - Terminal = window, **shell** = engine, **Bash** = one engine. A script is just
   typed commands saved in a file.
 - Master `cd ls pwd cat grep find` and pipes `|` **before** scripting.
 - `rwx` = 4/2/1; `chmod +x` is what lets `./script.sh` run.
 - The shebang `#!/bin/bash` must be **line 1**.
-- **Quote your variables:** `"$var"`.
+- **Quote your variables:** `"$var"` and `"${arr[@]}"`.
 - Three streams: stdin(0), stdout(1), stderr(2); redirect with `> >> 2> &>`.
+- **Exit codes:** 0 = success; `$?` = last code; chain with `&&`/`||`.
+- **`export`** makes a var inherit into child processes; `$PATH` is where commands
+  are found.
+- **Processes** have PIDs; `kill` sends **SIGTERM** (graceful), `-9` = SIGKILL (force).
+- **Networking:** IP\:port, `localhost`=127.0.0.1, `0.0.0.0`=all; HTTP 2xx/4xx/5xx;
+  `curl -s -o /dev/null -w '%{http_code}'` for health checks.
+- **Arrays:** `"${arr[@]}"` (all), `${#arr[@]}` (count); `declare -A` for maps (bash 4+).
+- Parse **JSON with `jq`**; CSV with `cut`/`awk`. Check tools with `command -v`.
 - Look things up with `man`; debug with `bash -x`; lint with `shellcheck`.
 
 ---
