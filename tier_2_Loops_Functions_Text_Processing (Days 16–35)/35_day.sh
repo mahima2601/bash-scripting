@@ -1,9 +1,6 @@
 #!/bin/bash
 
-# Day 23. Extract all unique IP addresses from a web server 
-#access log and print them sorted by frequency 
-#(most frequent first). Concept: awk/grep + sort + uniq -c. Hint: sort | uniq -c | sort -rn
+# DDay 35. Write a script using getopts that accepts 
+#-e <env>, -v (verbose), and -h (help) flags and acts 
+#on them. Concept: proper argument parsing. Hint: this is a senior-level must-know.
 
-
-file=$1
-echo "$(awk '{print $1}' "$file" | sort | uniq -c | sort -nr)"

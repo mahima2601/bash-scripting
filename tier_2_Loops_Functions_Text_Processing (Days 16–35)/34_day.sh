@@ -1,9 +1,6 @@
 #!/bin/bash
 
-# Day 23. Extract all unique IP addresses from a web server 
-#access log and print them sorted by frequency 
-#(most frequent first). Concept: awk/grep + sort + uniq -c. Hint: sort | uniq -c | sort -rn
+# Day 34. Read a list of hostnames from a file and 
+#ping each once, printing reachable/unreachable. 
+#Concept: loop + per-line action + exit codes. Hint: ping -c1 -W1.
 
-
-file=$1
-echo "$(awk '{print $1}' "$file" | sort | uniq -c | sort -nr)"

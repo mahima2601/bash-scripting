@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# Day 23. Extract all unique IP addresses from a web server 
-#access log and print them sorted by frequency 
-#(most frequent first). Concept: awk/grep + sort + uniq -c. Hint: sort | uniq -c | sort -rn
+# Day 32. Write a script that validates whether a 
+#string passed in is a valid IPv4 address. Concept: 
+#regex matching with [[ =~ ]]. Hint: BASH_REMATCH, check each octet ≤ 255.
 
 
-file=$1
-echo "$(awk '{print $1}' "$file" | sort | uniq -c | sort -nr)"
