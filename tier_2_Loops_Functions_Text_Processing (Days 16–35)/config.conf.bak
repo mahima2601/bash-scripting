@@ -1,0 +1,20 @@
+# Application configuration
+# Generated for local development
+
+server_host=0.0.0.0
+server_port=8080
+
+db_host=0.0.0.0
+db_port=5432
+db_name=appdb
+
+cache_url=redis://0.0.0.0:6379
+api_endpoint=http://0.0.0.0:8080/api/v1
+
+# listen directive
+listen 0.0.0.0:80
+
+# comma-separated hosts (note: 0.0.0.0 appears twice on this line)
+allowed_hosts=0.0.0.0,127.0.0.1,0.0.0.0.localdomain
+
+log_level=info

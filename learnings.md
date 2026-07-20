@@ -2656,21 +2656,129 @@ grep -oE "[0-9.]+" access.log | sort | uniq -c   # count numeric tokens
 
 ## Section 5 — `sed` (stream editor: find/replace, delete)
 
-The one you'll use 90% of the time is **substitution**:
+`sed` = **s**tream **ed**itor. It reads input **line by line**, applies your
+editing command to each line, and prints the result. It's the tool for
+**find/replace**, **deleting lines**, and **printing specific lines** — the
+non-interactive way to edit text (perfect for scripts).
+
+By default `sed` **prints to stdout and does NOT change the file** — you need
+`-i` (below) to edit in place.
+
+### Substitution — `s/old/new/flags` (90% of sed use)
 
 ```bash
-sed 's/localhost/0.0.0.0/'  conf         # replace FIRST localhost per line
-sed 's/localhost/0.0.0.0/g' conf         # g = ALL on each line (global)
-sed -n '5,10p' file                       # -n + p = print only lines 5–10
-sed '/^#/d' file                          # d = DELETE comment lines
-sed '/^$/d' file                          # delete blank lines
+sed 's/localhost/0.0.0.0/'  file     # replace the FIRST localhost on each line
+sed 's/localhost/0.0.0.0/g' file     # g = replace ALL on each line (global)
 ```
 
-Anatomy of `s/old/new/g`: **s**ubstitute, `/` separators, `g` = global flag.
+Anatomy of `s/old/new/g`: **s** = substitute, `/` are separators, then the flags.
 
-#### ⚠️ The big macOS vs Linux gotcha: in-place editing `-i` (Day 25)
+#### The substitution flags
 
-`-i` edits the file **in place**, but the syntax differs by platform:
+| Flag | Effect | Example |
+|------|--------|---------|
+| (none) | replace **first** match per line | `s/a/b/` |
+| `g`  | replace **all** matches per line (global) | `s/a/b/g` |
+| `I`  | case-**insensitive** match | `s/hello/hi/I` |
+| `2`  | replace only the **2nd** match | `s/foo/X/2` |
+| `p`  | **print** the line if a swap happened (with `-n`) | `sed -n 's/a/b/p'` |
+
+> ⚠️ **macOS gotcha:** `s/foo/X/2g` (replace *from the 2nd match onward*) works on
+> Linux GNU sed but **errors on your Mac's BSD sed** (`more than one number or 'g'`).
+> Verified. Stick to `g` or a single number for portability.
+
+#### Different delimiters — avoid "leaning-toothpick" `/`
+
+The separator doesn't have to be `/`. When your pattern contains slashes (paths,
+URLs), use `|` or `#` instead so you don't have to escape every `/`:
+
+```bash
+sed 's|/usr/local|/opt|' file        # clean — no need to escape the slashes
+sed 's/\/usr\/local/\/opt/' file     # ugly equivalent with escaped slashes
+```
+> Verified: `s|/usr/local|/opt|` on `/usr/local/bin` → `/opt/bin`.
+
+#### `&` and `\1` — reuse the matched text
+
+- **`&`** in the replacement = **the whole matched text** (wrap or annotate it):
+  ```bash
+  echo "error 42" | sed -E 's/[0-9]+/[&]/'      # -> error [42]   (& = "42")
+  ```
+- **`\1 \2 …`** = **capture groups** from `\( \)` (or `( )` with `-E`) — great for
+  reformatting:
+  ```bash
+  echo "2026-07-20" | sed -E 's/([0-9]+)-([0-9]+)-([0-9]+)/\3\/\2\/\1/'
+  # -> 20/07/2026   (reordered the three captured groups)
+  ```
+> Verified both. Use **`-E`** for `( )` grouping without backslashes (like grep).
+
+### Printing lines — `-n` + `p`
+
+`-n` silences sed's automatic printing, then `p` prints only what you select —
+turning sed into a line picker:
+
+```bash
+sed -n '5p'      file      # just line 5
+sed -n '5,10p'   file      # lines 5 through 10
+sed -n '$p'      file      # the LAST line ($ = last)
+sed -n '/ERROR/p' file     # only lines matching /ERROR/ (like grep)
+```
+> Verified: `-n '2p'` gave line 2; `-n '$p'` gave the last line.
+
+### Deleting lines — `d`
+
+```bash
+sed '/^#/d'  file          # delete COMMENT lines (start with #)
+sed '/^$/d'  file          # delete BLANK lines
+sed '3d'     file          # delete line 3
+sed '2,5d'   file          # delete lines 2–5
+sed '/ERROR/d' file        # delete lines containing ERROR
+```
+> The Day 26 task (strip comments + blanks) is just: `sed -E '/^\s*(#|$)/d'`.
+
+### Line addressing — "which lines" to act on
+
+Any command can be prefixed with an **address** that selects lines:
+
+| Address    | Selects                          |
+|------------|----------------------------------|
+| `5`        | line 5                           |
+| `5,10`     | lines 5 to 10                    |
+| `$`        | the **last** line                |
+| `/regex/`  | lines matching the regex         |
+| `/a/,/b/`  | from a line matching `a` to one matching `b` |
+
+```bash
+sed '2,$ s/foo/bar/'   file     # substitute only from line 2 to the end
+sed '/START/,/END/d'   file     # delete everything between START and END
+```
+
+### Multiple commands — `-e` or `;`
+
+```bash
+sed -e 's/a/A/' -e 's/c/C/' file      # several -e commands
+sed 's/a/A/; s/c/C/'          file      # or separate with ;
+```
+> Verified: both turned `a b c` into `A b C`.
+
+### Insert / append / change lines — `i` / `a` / `c`
+
+```bash
+sed '2i\
+NEW LINE'   file        # INSERT a line BEFORE line 2
+sed '2a\
+NEW LINE'   file        # APPEND a line AFTER line 2
+sed '3c\
+REPLACED'   file        # CHANGE (replace) line 3 entirely
+```
+> ⚠️ **macOS gotcha:** BSD sed requires the `a\` + real newline form shown above.
+> Linux GNU sed also allows the compact `sed '2a NEW LINE'`. Verified the
+> backslash form works on your Mac.
+
+### ⚠️ In-place editing `-i` — the big macOS vs Linux gotcha (Day 25)
+
+`-i` makes sed **change the file directly** instead of printing. The syntax
+differs by platform — the #1 sed portability trap:
 
 | Platform            | Command                                   |
 |---------------------|-------------------------------------------|
@@ -2680,8 +2788,30 @@ Anatomy of `s/old/new/g`: **s**ubstitute, `/` separators, `g` = global flag.
 | **macOS** + backup  | `sed -i.bak 's/a/b/' file`                |
 
 > On your Mac, `sed -i 's/a/b/' file` **errors** — BSD `-i` requires a backup
-> suffix argument (use `''` for none). Verified. `sed -i.bak` is the **portable**
-> form that works on both. This exact trap is Day 25.
+> suffix argument (use `''` for none). **`sed -i.bak` is the portable form** that
+> works on both, and it keeps a safety backup. Always preview to stdout first,
+> then apply with `-i.bak` (Day 25).
+
+### Real-world sed one-liners
+
+```bash
+sed 's/\r$//' file                    # strip Windows carriage-returns (CRLF→LF)
+sed -n '10,20p' big.log               # peek at lines 10–20
+sed '/^#/d; /^$/d' config             # drop comments and blanks (Day 26)
+sed -i.bak 's/DEBUG/INFO/g' app.conf  # bulk config change with backup
+sed -n '$=' file                      # print the line count (like wc -l)
+sed 's/^/    /' file                  # indent every line by 4 spaces
+```
+
+#### Key takeaways
+- `sed 's/old/new/g'` is the workhorse; **`g`** = all per line, **`I`** = ignore case.
+- sed **prints by default and doesn't touch the file** — use **`-i.bak`** (portable)
+  to edit in place with a backup.
+- `-n` + `p` prints selected lines; `d` deletes them; address with numbers, `$`,
+  or `/regex/`.
+- Use a different delimiter (`s|...|...|`) for paths; `&`/`\1` reuse matched text
+  (with `-E` for groups).
+- macOS BSD sed differs: `-i ''`, no `/2g`, and `a`/`i`/`c` need the `\`+newline form.
 
 ## Section 6 — `awk` (field-by-field processing)
 
