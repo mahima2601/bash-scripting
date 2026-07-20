@@ -2685,51 +2685,200 @@ Anatomy of `s/old/new/g`: **s**ubstitute, `/` separators, `g` = global flag.
 
 ## Section 6 — `awk` (field-by-field processing)
 
-`awk` treats each line as **fields** split on whitespace (or `-F` delimiter).
-`$1` = first field, `$2` = second, … `$0` = whole line, `NF` = number of fields,
-`NR` = current line number.
+`awk` is a mini text-processing language. For **every line** it splits the line
+into **fields** and runs your little program on it. It's the tool when you need
+to work with **columns** — print some, filter on them, or do math.
 
-```bash
-awk '{print $1}'  file             # first field of each line
-awk -F, '{print $1, $3}' data.csv  # -F, = comma-separated (CSV) -> Day 24
-awk '{print NR": "$0}' file         # prepend line numbers
-awk '$3 > 100' file                 # print lines where field 3 > 100
-awk '/ERROR/ {print $2}' file       # for lines matching /ERROR/, print field 2
-awk '{sum += $1} END {print sum}'   # RUNNING TOTAL of column 1
+#### The mental model: fields
+
+`awk` chops each line into fields (on whitespace by default) and numbers them:
+
+```
+alice   30   engineering
+  $1     $2      $3            $0 = the whole line
 ```
 
-- **`BEGIN { }` / `END { }`** run once before / after all lines — perfect for
-  headers and totals.
-- Built-in vars: `NR` (line number), `NF` (field count), `$NF` (last field).
+| Variable | Means                              |
+|----------|------------------------------------|
+| `$0`     | the **whole line**                 |
+| `$1`, `$2`, … | field 1, field 2, …           |
+| `$NF`    | the **last** field (NF = # fields) |
+| `NF`     | **N**umber of **F**ields on this line |
+| `NR`     | current line **N**umber (**R**ecord) |
 
-> Verified: `awk -F, '{print $1, $3}'` on `alice,30,NYC` printed `alice NYC`.
-> `awk` is a whole language, but 90% of DevOps use is "print/filter/sum a column."
+```bash
+awk '{print $1}'  file        # first column of every line
+awk '{print $NF}' file        # LAST column (handy — position may vary)
+awk '{print NR, $0}' file     # number each line
+```
+
+#### The structure: `pattern { action }`
+
+Every awk program is **pattern** + **action**. Either part is optional:
+
+```bash
+awk '{print $1}'        file   # no pattern → action runs on EVERY line
+awk '/ERROR/'           file   # pattern only → print matching lines (default action)
+awk '/ERROR/ {print $2}' file  # both → on ERROR lines, print field 2
+awk '$2 > 28 {print $1}' file  # pattern can be a COMPARISON on a field
+```
+
+- **Pattern** decides *which* lines (a `/regex/` or a condition like `$3=="NYC"`).
+- **Action** in `{ }` decides *what to do*. Default action is `print $0`.
+- Verified: `awk '$2 > 28 {print $1}'` printed the people older than 28.
+
+#### Custom delimiter with `-F`
+
+By default fields split on whitespace. `-F` sets a different separator — essential
+for CSVs (Day 24):
+
+```bash
+awk -F, '{print $1, $3}' data.csv     # comma-separated → fields 1 and 3
+awk -F: '{print $1}' /etc/passwd       # colon-separated → usernames
+```
+> Verified: `awk -F, '{print $1, $3}'` on `alice,30,NYC` → `alice NYC`.
+> Note: `print $1, $3` (comma) puts a space between them; `print $1 $3` (no comma)
+> jams them together.
+
+#### `BEGIN` and `END` — run once, before/after everything
+
+```bash
+awk 'BEGIN {print "Report:"} {print $1} END {print NR" rows"}' file
+```
+- `BEGIN { }` runs **once before** any line — set up headers, variables.
+- `END { }` runs **once after** the last line — print totals, summaries.
+
+#### Math & totals (awk's superpower)
+
+awk keeps variables across lines, so summing a column is trivial:
+
+```bash
+awk '{sum += $2} END {print sum}' file            # total of column 2
+awk '{sum += $2} END {printf "avg=%.1f\n", sum/NR}' file   # average, formatted
+```
+> Verified: on ages 30/25/35 → `total=90 avg=30.0`. `printf` formats numbers
+> (`%d` integer, `%.1f` one decimal, `%s` string) — cleaner than `print`.
+
+#### Grouping & counting with associative arrays
+
+This is awk at its best — count occurrences by key in one pass (a mini GROUP BY):
+
+```bash
+awk '{count[$3]++} END {for (k in count) print k, count[k]}' file
+```
+> Verified: counted departments → `engineering 2`, `sales 1`. This is how you'd
+> count HTTP status codes (Day 53) or requests per IP.
+
+#### Real-world one-liners
+
+```bash
+awk '{print $1}' access.log | sort | uniq -c | sort -rn   # top IPs (Day 23)
+awk -F, 'NR>1 {print $1}' data.csv                         # skip header row (NR>1)
+awk '$9 == 500' access.log                                 # lines where field 9 is 500
+awk '{print $NF}' file                                     # last field of each line
+df -h | awk 'NR>1 {print $5, $6}'                          # disk %use and mount
+```
+
+#### Key takeaways
+- awk = **`pattern { action }`** run per line; fields are `$1`,`$2`,…,`$NF`.
+- `-F` sets the delimiter (`-F,` for CSV). `NR` = line number, `NF` = field count.
+- `BEGIN`/`END` for headers/totals; `sum += $n` accumulates; `printf` formats.
+- `arr[$k]++` counts by key — a one-line GROUP BY.
+- Reach for awk over `cut` when you need **logic, math, or conditions** on columns.
 
 ## Section 7 — `cut`, `sort`, `uniq` (the pipeline finishers)
 
+These three almost always sit at the **end of a pipe**, shaping the final output.
+
+### `cut` — pull out columns
+
+Simplest column extractor. Pick fields by a delimiter, or characters by position:
+
 ```bash
-cut -d, -f1,3 data.csv       # -d = delimiter, -f = fields 1 and 3 (Day 24)
-cut -d: -f1 /etc/passwd       # usernames (Day 9 used this)
+cut -d, -f1,3 data.csv     # -d = delimiter (comma), -f = fields 1 AND 3 (Day 24)
+cut -d: -f1 /etc/passwd     # colon-delimited → usernames (Day 9)
+cut -f2 file                # DEFAULT delimiter is TAB
+cut -c1-5 file              # -c = CHARACTERS 1–5 (by position, not fields)
+```
+| Flag  | Meaning                          |
+|-------|----------------------------------|
+| `-d`  | the **d**elimiter (default: tab) |
+| `-f`  | which **f**ields (`-f1`, `-f1,3`, `-f2-4`) |
+| `-c`  | **c**haracters by position (`-c1-5`) |
 
-sort file                     # alphabetical
-sort -n file                  # -n = NUMERIC sort (10 after 9, not before)
-sort -r file                  # -r = reverse
-sort -k2 file                 # sort by 2nd field
-sort -t, -k3 -n data.csv      # -t = field separator, sort by field 3 numerically
+> ⚠️ `cut -d' '` treats **each single space** as a separator — so runs of spaces
+> create empty fields. For whitespace-separated columns with irregular spacing,
+> use **`awk`** instead (it collapses whitespace runs). Verified: `cut -c1-3` of
+> `abcdefg` → `abc`.
 
-uniq file                     # collapse ADJACENT duplicate lines
-uniq -c file                  # -c = prefix each line with its COUNT
+### `sort` — order lines
+
+```bash
+sort file            # alphabetical (lexical) — "10" comes BEFORE "2"!
+sort -n file         # -n = NUMERIC — 2, 4, 10, 33 (the right order for numbers)
+sort -r file         # -r = reverse
+sort -rn file        # numeric, descending (biggest first)
+sort -u file         # -u = sort AND remove duplicates in one step
+sort -k2 file        # sort by the 2nd field
+sort -t, -k3 -n f    # -t = field separator, sort by field 3 numerically
+sort -h file         # -h = human sizes (2K, 5M, 1G) sort correctly
+```
+| Flag  | Meaning                              |
+|-------|--------------------------------------|
+| `-n`  | **n**umeric sort (not text order)    |
+| `-r`  | **r**everse                          |
+| `-u`  | **u**nique (dedupe while sorting)    |
+| `-k`  | sort by a **k**ey/field (`-k2`)      |
+| `-t`  | field separator (`-t,`)              |
+| `-h`  | **h**uman-readable sizes (`-h`)      |
+
+> ⚠️ **The #1 sort gotcha:** default sort is **lexical** — `10` sorts before `2`
+> because it compares character-by-character (`"1" < "2"`). Verified: plain sort
+> gave `10 2 33 4`; `sort -n` gave `2 4 10 33`. **Always `-n` for numbers.**
+
+### `uniq` — collapse duplicate lines
+
+```bash
+uniq file            # collapse ADJACENT identical lines into one
+uniq -c file         # -c = prefix each line with its COUNT
+uniq -d file         # -d = show only lines that ARE duplicated
+uniq -u file         # -u = show only lines that are UNIQUE (never repeated)
 ```
 
-> ⚠️ `uniq` only collapses **adjacent** duplicates — you must **`sort` first**.
-> The classic "count by frequency" idiom (Day 23) is:
-> ```bash
-> sort | uniq -c | sort -rn      # group, count, then most-frequent first
-> ```
-> Verified: it correctly found `3 10.0.0.1` as the top IP.
+> ⚠️ **`uniq` only looks at ADJACENT lines** — you must **`sort` first**, or
+> duplicates that aren't next to each other won't be collapsed. Verified: on
+> `a a b a`, plain `uniq -c` gave `2 a / 1 b / 1 a` (wrong — two separate "a"
+> groups); `sort | uniq -c` gave `3 a / 1 b` (correct).
 
-- `cut` vs `awk`: `cut` is simpler for fixed delimiters; `awk` when you need logic
-  or whitespace-runs as one separator.
+### The famous "count by frequency" idiom (Day 23)
+
+Put them together and you get the most-used log-analysis one-liner in existence:
+
+```bash
+sort | uniq -c | sort -rn
+#  │      │         └─ sort by that count, biggest first (-r reverse, -n numeric)
+#  │      └─ collapse + prefix each with its count
+#  └─ bring identical lines together so uniq can see them
+```
+
+Full example — top IP addresses in an access log (Day 23):
+```bash
+awk '{print $1}' access.log | sort | uniq -c | sort -rn | head
+#   └ pull the IP column   └ group  └ count    └ rank    └ top 10
+```
+> Verified: this pattern correctly surfaced `3 10.0.0.1` as the most frequent IP.
+
+### `cut` vs `awk` — which to use?
+- **`cut`** — simple, fixed single-char delimiter, just grabbing columns.
+- **`awk`** — whitespace-run delimiters, or when you need **logic, math, or
+  conditions** (`$3 > 100`, sums, grouping).
+
+#### Key takeaways
+- `cut -d X -f N` grabs columns; `-c` grabs characters by position.
+- `sort -n` for numbers (default is lexical — `10` before `2`!); `-rn` = biggest
+  first; `-u` dedupes; `-k`/`-t` sort by a field.
+- `uniq` needs a **`sort` first** (adjacent-only); `-c` counts.
+- `sort | uniq -c | sort -rn` = the count-by-frequency idiom.
 
 ## Section 8 — Reading a file line by line
 
