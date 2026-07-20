@@ -3537,6 +3537,44 @@ find /tmp -type f -mtime +7 -delete        # clean files older than 7 days (Day 
 - `-exec cmd {} \;` → runs `cmd` **separately for each** file (N processes).
 - `-exec cmd {} +`  → passes **all** files to **one** `cmd` (much faster on many files).
 
+#### Worked example: `find "$dir" -type f -exec du -h {} +` (Day 31)
+
+This one command — the heart of Day 31 (largest files) — is worth reading in full:
+
+```bash
+find "$dir" -type f -exec du -h {} +
+```
+
+| Piece | Meaning |
+|-------|---------|
+| `find` | walk the tree (recurses by default) |
+| `"$dir"` | **where to start** — the directory to scan (quoted → spaces safe) |
+| `-type f` | **only regular files** — skip directories, symlinks |
+| `-exec ... +` | run a command on the matches |
+| `du -h {}` | the command: `du -h`, with `{}` = the found file(s) |
+| `+` | **batch**: pass *all* files to **one** `du` call |
+
+Two tricky bits:
+- **`{}` is a placeholder** — find substitutes the file paths where `{}` sits, so
+  `du -h {}` becomes `du -h ./a.log ./b.txt …`.
+- **`du -h`** = **d**isk **u**sage, **h**uman-readable (`8.0K`, `20K`, `88K`), so
+  each output line is `SIZE⇥PATH`.
+
+> ⚠️ **Why `-type f` matters here beyond filtering:** `du` on a *directory* reports
+> the directory's **total**, but `du` on a *file* reports **that file's** size.
+> `-type f` guarantees only files reach `du`, so you get **per-file** sizes — which
+> is exactly what "largest files" needs.
+
+**Completing Day 31** — that command lists sizes unsorted; pipe it to rank them:
+
+```bash
+find "$dir" -type f -exec du -h {} + | sort -rh | head -5
+#                                       │          └ keep the top 5
+#                                       └ sort by size, human-readable, descending
+```
+- `sort -rh` → `-h` understands `K`/`M`/`G` suffixes; `-r` = biggest first.
+- `head -5` → the 5 largest. Verified end-to-end.
+
 #### ⚠️ Safety with spaces & newlines: `-print0` + `xargs -0` (Day 54)
 
 Filenames can contain spaces or newlines, which break naive loops/pipes. The safe
