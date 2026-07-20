@@ -3434,14 +3434,9 @@ Exit code `0` = reachable, non-zero = not (an exit-code check, like Day 9/12).
 > So `ping -c 1 -W 1 host` = "one packet, give up after 1 second" — the form you
 > want in a script so an unreachable host never makes it hang (Day 34).
 
-#### `find` (Day 31) — recursive file search + actions
-```bash
-find . -type f -name "*.log"          # all .log files, recursively
-find . -type f -exec du -h {} +        # run du on each found file ({} = the file)
-find /tmp -type f -mtime +7 -delete    # files older than 7 days (Day 36 later)
-```
-`-exec ... {} +` feeds the found files into a command — combine with `sort` for
-"5 largest files" (Day 31).
+#### `find` (Days 17, 31, 36) — searching the filesystem
+`find` locates files by name/type/size/age and can run a command on each. It gets
+its own full deep-dive in **§12** — see there.
 
 #### `kubectl` (Day 28) — Kubernetes CLI
 ```bash
@@ -3457,7 +3452,126 @@ kubectl get pods -n <namespace> # pods in a namespace
 - Date arithmetic for "last 24 hours" (Day 30): `date -d '24 hours ago' +%s`
   (Day 6 §6). Compare Unix timestamps (`+%s`) numerically.
 
-## Section 12 — Habits to carry into every Tier 2 script
+## Section 12 — `find` (searching the filesystem)
+
+`find` walks a directory tree and locates files/dirs matching your criteria — by
+**name, type, size, or age** — and can **run a command** on each. It's *the* tool
+for "find these files and do something with them" (Days 17, 31, 36).
+
+The shape is **`find <where> <tests> <action>`**:
+
+```bash
+find . -type f -name "*.log"
+#    │     │        └ test: name matches *.log
+#    │     └ test: only regular files
+#    └ where to start ( . = here; find RECURSES by default )
+```
+- **`find` recurses automatically** — it searches the whole tree under the start
+  path, no flag needed.
+- **No action given → default is `-print`** (print each match).
+
+#### Where to search
+
+```bash
+find .            # current directory and everything below
+find /var/log     # a specific directory
+find . /tmp       # multiple starting points at once
+```
+
+#### Tests — narrow down what matches
+
+**By name / type:**
+
+| Test | Matches |
+|------|---------|
+| `-name "*.log"`  | name matches the glob (case-sensitive) |
+| `-iname "*.log"` | name matches, case-**i**nsensitive |
+| `-type f`        | regular **f**iles |
+| `-type d`        | **d**irectories |
+| `-type l`        | symbolic **l**inks |
+| `-path "*/sub/*"`| the full **path** matches a glob |
+| `-empty`         | empty files or directories |
+
+**By size / time:**
+
+| Test | Matches |
+|------|---------|
+| `-size +1M`  | larger than 1 MB (`+`=more, `-`=less; units `c` `k` `M` `G`) |
+| `-mtime +7`  | modified **more** than 7 days ago (`-7` = within 7 days) |
+| `-mmin -60`  | modified within the last 60 minutes |
+| `-newer FILE`| modified more recently than `FILE` |
+
+#### Combining tests — AND / OR / NOT
+
+```bash
+find . -type f -name "*.log"                        # AND is implicit (both must match)
+find . -name "*.log" -o -name "*.txt"                # -o = OR
+find . -type f ! -name "*.log"                       # ! (or -not) = NOT
+find . -type f \( -name "*.log" -o -name "*.txt" \)  # group with escaped \( \)
+```
+
+#### Depth control
+
+```bash
+find . -maxdepth 1 -type f     # only the current dir — don't recurse
+find . -mindepth 2             # skip the top level
+```
+
+#### Actions — do something with each match
+
+| Action | Effect |
+|--------|--------|
+| `-print`          | print the path (the default) |
+| `-delete`         | **delete** the match (⚠️ irreversible) |
+| `-exec cmd {} \;` | run `cmd` **once per file** (`{}` = the file) |
+| `-exec cmd {} +`  | run `cmd` **once with all files** (fewer processes, faster) |
+| `-print0`         | print paths NUL-separated (pair with `xargs -0`) |
+
+```bash
+find . -name "*.log" -exec wc -l {} +     # count lines in all .log files (one wc call)
+find . -name "*.tmp" -delete               # delete every .tmp file
+find /tmp -type f -mtime +7 -delete        # clean files older than 7 days (Day 36)
+```
+
+**`\;` vs `+`** (verified):
+- `-exec cmd {} \;` → runs `cmd` **separately for each** file (N processes).
+- `-exec cmd {} +`  → passes **all** files to **one** `cmd` (much faster on many files).
+
+#### ⚠️ Safety with spaces & newlines: `-print0` + `xargs -0` (Day 54)
+
+Filenames can contain spaces or newlines, which break naive loops/pipes. The safe
+way to feed find's results into another command:
+
+```bash
+find . -type f -name "*.log" -print0 | xargs -0 rm    # NUL-separated → space-safe
+```
+`-print0` separates paths with a NUL byte and `xargs -0` splits on NUL, so a name
+like `my report.log` stays intact (Day 54).
+
+#### Real-world `find` patterns
+
+```bash
+find . -type f -name "*.sh"                            # all shell scripts
+find /var/log -type f -mtime +30 -delete                # purge logs older than 30 days
+find . -type f -size +100M                               # find big files
+find . -type d -empty -delete                            # remove empty directories
+find . -type f -exec du -h {} + | sort -rh | head -5     # 5 LARGEST files (Day 31)
+find . -type f -name "*.conf" -exec grep -l "debug" {} + # configs containing "debug"
+```
+
+> The **5-largest-files** line is Day 31: `find` lists every file with its size
+> (`du -h`), `sort -rh` orders by human-readable size (descending), `head -5` takes
+> the top. Verified.
+> Note: `-printf` (custom output format) is a **GNU find** (Linux) feature.
+
+#### `find` key takeaways
+- `find <where> <tests> <action>` — recurses by default; default action is print.
+- Tests: `-name`/`-iname`, `-type f/d/l`, `-size`, `-mtime`/`-mmin`, `-empty`, `!`, `-o`.
+- `-exec cmd {} +` (batched, fast) vs `-exec cmd {} \;` (per file); `-delete` removes.
+- Use `-print0 | xargs -0` for filenames with spaces/newlines (Day 54).
+- `find ... -exec du -h {} + | sort -rh | head` = largest files (Day 31).
+
+## Section 13 — Habits to carry into every Tier 2 script
 
 - **Quote everything:** `"$var"`, `"$@"`, `"$f"` — globs and spaces bite hardest
   in loops (Day 10).
