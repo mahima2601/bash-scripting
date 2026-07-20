@@ -3389,30 +3389,132 @@ ${var,}    # lowercase first char         ${var,,}   # lowercase all
 
 ## Section 10 — `getopts` (proper flag parsing — Day 35)
 
-For real CLI flags like `-e prod -v -h`, don't hand-parse `$1`/`$2` — use the
-built-in `getopts`:
+For real CLI flags (`-e prod -v -h`), **don't hand-parse `$1`/`$2`** — bash has a
+built-in for it: **`getopts`**. It handles flags in any order, bundled flags
+(`-ve`), flags-with-values, and errors — all the stuff you'd otherwise write by
+hand. This is a **senior-level must-know**.
+
+### The anatomy
 
 ```bash
-verbose=0
-while getopts "e:vh" opt; do        # "e:vh" = valid flags; ':' means -e takes a value
+while getopts ":e:vh" opt; do
     case "$opt" in
-        e) env="$OPTARG" ;;          # $OPTARG holds -e's value
-        v) verbose=1 ;;
-        h) echo "usage..."; exit 0 ;;
-        *) echo "bad flag" >&2; exit 1 ;;
+        e) ... "$OPTARG" ... ;;
+        v) ... ;;
+        h) ... ;;
     esac
 done
-shift $((OPTIND - 1))                # drop parsed flags, leaving positional args
+shift $((OPTIND - 1))
 ```
 
-| Piece      | Meaning                                             |
-|------------|-----------------------------------------------------|
-| `"e:vh"`   | flags `-e -v -h`; the `:` after `e` = **needs an argument** |
-| `$OPTARG`  | the value given to a flag that takes one            |
-| `$OPTIND`  | index of the next arg — used by `shift` at the end  |
+- **`getopts OPTSTRING var`** parses **one** option per call and stores its letter
+  in `var` (here `opt`). The `while` loops until options run out.
+- Run it in a `while … case` — one `case` branch per flag.
 
-> Verified: parsed `-e prod -v` into `env=prod` and `verbose on`. This is a
-> **senior-must-know** — production scripts use `getopts`, not `$1` guessing.
+### The OPTSTRING — the spec for your flags
+
+The string `":e:vh"` describes the allowed flags:
+
+| In the optstring | Meaning |
+|------------------|---------|
+| a letter (`v`, `h`) | a **flag** that takes no argument |
+| a letter **followed by `:`** (`e:`) | a flag that **requires an argument** |
+| a **leading `:`** (`":e:vh"`) | **silent error mode** — *you* handle bad input (see below) |
+
+So `":e:vh"` = "`-e` needs a value; `-v` and `-h` are bare flags; and I'll handle
+my own errors."
+
+### The magic variables
+
+| Variable   | Holds |
+|------------|-------|
+| `$OPTARG`  | the **value** given to a flag that takes one (`-e prod` → `OPTARG=prod`) |
+| `$OPTIND`  | index of the **next** argument to process |
+
+**`shift $((OPTIND - 1))`** at the end drops all the parsed options, leaving only
+the **positional arguments** in `"$@"`. (Verified: after `-e prod -v`, `OPTIND`
+was 6, so trailing args survive the shift.)
+
+### Error handling — the leading colon
+
+**With** a leading `:` in the optstring (silent mode), `getopts` sets `opt` to a
+special value and you handle it — cleaner, and you control the message:
+
+```bash
+while getopts ":e:vh" opt; do
+    case "$opt" in
+        e)  env="$OPTARG" ;;
+        v)  verbose=1 ;;
+        h)  usage; exit 0 ;;
+        :)  echo "Error: -$OPTARG requires an argument" >&2; exit 1 ;;   # missing value
+        \?) echo "Error: unknown option -$OPTARG" >&2; exit 1 ;;          # unknown flag
+    esac
+done
+```
+- **`:)`** fires when a required argument is **missing** (`-e` with nothing after);
+  `$OPTARG` holds the option letter.
+- **`\?)`** fires on an **unknown** option (`-x`). (`?` is escaped — it's a glob char.)
+
+> **Without** the leading colon, `getopts` prints its **own** message (e.g.
+> `illegal option -- x`) — fine for quick scripts, but the silent-mode form above
+> gives you clean stderr messages and exit codes. Both verified.
+
+### The full Day 35 solution
+
+```bash
+#!/bin/bash
+
+usage() {
+    cat <<USAGE
+Usage: $0 [-e <env>] [-v] [-h]
+  -e <env>   target environment (dev|staging|prod)
+  -v         verbose output
+  -h         show this help
+USAGE
+}
+
+env=""
+verbose=0
+
+while getopts ":e:vh" opt; do
+    case "$opt" in
+        e)  env="$OPTARG" ;;
+        v)  verbose=1 ;;
+        h)  usage; exit 0 ;;
+        :)  echo "Error: -$OPTARG requires an argument" >&2; usage; exit 1 ;;
+        \?) echo "Error: unknown option -$OPTARG" >&2; usage; exit 1 ;;
+    esac
+done
+shift $((OPTIND - 1))          # "$@" now holds only positional args
+
+(( verbose )) && echo "[verbose on]"
+if [[ -n "$env" ]]; then
+    echo "Target environment: $env"
+else
+    echo "No environment set (use -e)"
+fi
+(( $# )) && echo "Leftover args: $*"
+```
+> Verified: `-e prod -v` and `-v -e staging` both work (order-independent);
+> `-ve prod` bundles two flags; `-e` (no value) and `-x` (unknown) error cleanly;
+> `-h` prints usage; positional args after the flags survive the `shift`.
+
+### What getopts gives you for free
+- **Order-independent** flags (`-e prod -v` = `-v -e prod`).
+- **Bundling** — `-ve prod` = `-v` + `-e prod`.
+- **Clean errors** — missing values and unknown flags caught.
+- **Positional args preserved** after `shift $((OPTIND-1))`.
+
+> ⚠️ **Limitation:** `getopts` handles **short** options only (`-e`), **not** GNU
+> long options (`--env`). For `--long` flags you'd use a manual `while`/`case` loop
+> or the external `getopt` (different tool). For most scripts, short flags are fine.
+
+#### Key takeaways
+- `while getopts ":e:vh" opt; do case "$opt" in … esac; done` — one branch per flag.
+- **`x:`** = flag `-x` needs a value (in `$OPTARG`); **leading `:`** = silent mode.
+- Handle **`:)`** (missing arg) and **`\?)`** (unknown flag) yourself in silent mode.
+- End with **`shift $((OPTIND-1))`** to leave positional args in `"$@"`.
+- Short flags only; use it instead of hand-parsing `$1`/`$2`.
 
 ## Section 11 — Networking & real-world commands you'll meet
 
