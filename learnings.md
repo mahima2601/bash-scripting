@@ -626,6 +626,100 @@ the command is missing, so it drops into an `if` (Day 49).
 > fast with a clear message if something's missing (Day 49), rather than crashing
 > halfway through.
 
+### Section 18 — Compression & archiving (`tar`, `gzip`, `zip`)
+
+Backups, log rotation, and shipping files all need this. Two **separate** ideas
+that often get combined:
+
+- **Archiving** = bundling many files into **one** file (`tar`). Doesn't shrink.
+- **Compression** = making a file **smaller** (`gzip`, `bzip2`, `xz`). One file at a time.
+
+`tar` does both when you add a compression flag — that's why `.tar.gz` exists
+(*archived* with tar, then *compressed* with gzip).
+
+#### `tar` — the archiver you'll use most
+
+The flags read like a sentence: **c**reate / e**x**tract / lis**t**, **z**ipped,
+**f**ile named…
+
+```bash
+tar -czf backup.tar.gz /path/to/dir     # CREATE  a gzipped archive
+tar -tzf backup.tar.gz                   # LIST    contents (test/table — no extraction)
+tar -xzf backup.tar.gz                   # EXTRACT here
+tar -xzf backup.tar.gz -C /restore/dir   # EXTRACT into a specific dir (-C = change dir)
+```
+
+| Flag | Means |
+|------|-------|
+| `-c` | **c**reate an archive |
+| `-x` | e**x**tract an archive |
+| `-t` | lis**t** contents (great for checking before extracting) |
+| `-f` | the **f**ilename follows (**always needed**; keep it last of the bundle) |
+| `-z` | gzip compress/decompress (`.tar.gz` / `.tgz`) |
+| `-j` | bzip2 (`.tar.bz2`) |
+| `-J` | xz (`.tar.xz`) |
+| `-v` | **v**erbose — print each file as it's processed |
+| `-C DIR` | **c**hange to DIR first (where to extract to) |
+
+> **Memory hook:** *"**c**reate **z**ipped **f**ile"* = `-czf`, *"e**x**tract
+> **z**ipped **f**ile"* = `-xzf`, *"lis**t** **z**ipped **f**ile"* = `-tzf`.
+> Verified: create → list → extract round-trips correctly.
+
+**Useful extras:**
+```bash
+tar -tvf archive.tar.gz                       # verbose list: perms, size, date
+tar -xzf archive.tar.gz data/a.txt            # extract ONE file from the archive
+tar -czf out.tar.gz --exclude='*.log' dir/     # skip matching files
+tar -czf backup-$(date +%F).tar.gz /etc        # TIMESTAMPED backup (Day 36!)
+```
+
+#### `gzip` / `gunzip` — compress a single file
+
+```bash
+gzip file.log            # → file.log.gz   (⚠️ REPLACES the original!)
+gunzip file.log.gz       # → file.log      (removes the .gz)
+gzip -k file.log         # -k = KEEP the original too
+gzip -d file.log.gz      # -d = decompress (same as gunzip)
+zcat file.log.gz         # view a .gz WITHOUT decompressing it
+zgrep "ERROR" file.log.gz # grep inside a .gz directly
+```
+> ⚠️ Plain `gzip` **deletes the original** and leaves only the `.gz` — verified.
+> Use `-k` if you need to keep both. `zcat`/`zgrep`/`zless` are gold for reading
+> rotated logs without unpacking them (Day 44).
+
+#### `zip` / `unzip` — cross-platform archives
+
+```bash
+zip -r archive.zip dir/    # -r = recursive (needed for directories)
+unzip archive.zip          # extract here
+unzip -l archive.zip       # LIST contents without extracting
+unzip archive.zip -d /dir  # extract into a directory
+```
+`zip` both archives *and* compresses in one step (unlike tar+gzip). It's the
+Windows-friendly format; on Linux, `.tar.gz` is the convention.
+
+#### Which compression? (verified sizes on the same data)
+
+| Format | tar flag | Speed | Compression | Use when |
+|--------|----------|-------|-------------|----------|
+| **gzip** (`.gz`) | `-z` | fast | good | **the default** — backups, logs |
+| **bzip2** (`.bz2`) | `-j` | slow | better | archival where size matters |
+| **xz** (`.xz`) | `-J` | slowest | **best** | distributing large files |
+
+> On a tiny sample: xz 584B < gzip 636B < bzip2 695B. On real data the ordering is
+> usually xz < bzip2 < gzip for size, and the reverse for speed. **Stick with gzip
+> (`-z`)** unless you have a reason not to — it's fast and universally available.
+
+#### Day 36's backup pattern (preview)
+
+```bash
+tar -czf "/backups/backup-$(date +%F).tar.gz" /var/www     # timestamped archive
+find /backups -name "*.tar.gz" -mtime +7 -delete            # prune older than 7 days
+```
+That's the whole Day 36 exercise: `tar -czf` with a `$(date +%F)` filename
+(Day 6 command substitution), plus `find -mtime +7 -delete` (§12 of Tier 2) to
+clean up old backups.
+
 #### Day 0 key takeaways
 - Terminal = window, **shell** = engine, **Bash** = one engine. A script is just
   typed commands saved in a file.
@@ -642,6 +736,8 @@ the command is missing, so it drops into an `if` (Day 49).
   `curl -s -o /dev/null -w '%{http_code}'` for health checks.
 - **Arrays:** `"${arr[@]}"` (all), `${#arr[@]}` (count); `declare -A` for maps (bash 4+).
 - Parse **JSON with `jq`**; CSV with `cut`/`awk`. Check tools with `command -v`.
+- **Archiving:** `tar -czf` create, `-xzf` extract, `-tzf` list; `gzip` compresses
+  one file (`-k` to keep the original); `zcat`/`zgrep` read `.gz` without unpacking.
 - Look things up with `man`; debug with `bash -x`; lint with `shellcheck`.
 
 ---
