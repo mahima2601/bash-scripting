@@ -290,7 +290,10 @@ ls -l | sort -k5 -n | tail -5             # 5 biggest files
 ```
 
 This is the Unix philosophy: **small tools, each doing one thing, combined.**
-(Deep dives: streams & `>&2` in Day 2 §4, `/dev/null` in Day 2 §5.)
+
+> 📖 **Full reference: Day 0 §19** — every operator, plus `tee`, `exec`, custom
+> file descriptors and process substitution, all in one place. (Narrower deep
+> dives: `>&2` in Day 2 §4, `/dev/null` in Day 2 §5, heredocs in Day 2 §6.)
 
 ### Section 8 — The building blocks (preview + index)
 
@@ -720,6 +723,254 @@ That's the whole Day 36 exercise: `tar -czf` with a `$(date +%F)` filename
 (Day 6 command substitution), plus `find -mtime +7 -delete` (§12 of Tier 2) to
 clean up old backups.
 
+### Section 19 — I/O redirection & file descriptors (the complete guide)
+
+**Your one-stop reference for everything redirection.** This gathers the pieces
+scattered across Day 0 §7, Day 2 §4/§5/§6/§7 and adds the three tools Tier 3
+needs: **`tee`**, **`exec`**, and **process substitution**. If you only read one
+section on redirection, read this one.
+
+#### 1. The mental model — three hoses
+
+Every command has three streams attached to it. They're numbered, and those
+numbers are called **file descriptors** (FDs):
+
+| FD | Name   | Default location | Carries                     |
+|----|--------|------------------|-----------------------------|
+| 0  | stdin  | keyboard         | input coming **in**         |
+| 1  | stdout | screen           | **normal results**          |
+| 2  | stderr | screen           | **errors / warnings / logs**|
+
+Because stdout and stderr *both* point at your screen by default, they look like
+one stream — but they're two, and you can aim each one somewhere different. That
+single fact explains every operator below.
+
+> **Why two output streams?** So that `kubectl get pods | grep Running` pipes
+> only real **data**, while error messages go around the pipe to your screen.
+> Diagnostics never contaminate the data flow.
+
+#### 2. The one rule that unlocks every operator
+
+> **Without `&`, the target is a _filename_. With `&`, the target is a
+> _file-descriptor number_.**
+
+- `2> file` → errors into a file literally named `file`
+- `2>&1`    → errors to **wherever FD 1 is pointing right now**
+
+Read `N>&M` as **"point stream N at stream M's current destination."**
+
+#### 3. The complete operator table
+
+| Syntax        | Long form | Meaning                                   |
+|---------------|-----------|-------------------------------------------|
+| `> file`      | `1> file` | stdout → file (**overwrite**)             |
+| `>> file`     | `1>>file` | stdout → file (**append**)                |
+| `2> file`     |           | stderr → file (overwrite)                 |
+| `2>> file`    |           | stderr → file (append)                    |
+| `&> file`     | `>file 2>&1` | **both** streams → file (overwrite)    |
+| `&>> file`    | `>>file 2>&1` | **both** streams → file (append)      |
+| `>&2`         | `1>&2`    | stdout → wherever **stderr** goes         |
+| `2>&1`        |           | stderr → wherever **stdout** goes         |
+| `< file`      | `0< file` | file → stdin (feed a file **in**)         |
+| `<< EOF`      |           | heredoc — multi-line text → stdin (§Day 2 §6) |
+| `<<< "text"`  |           | herestring — one string → stdin (Day 4 §1)|
+| `cmd1 \| cmd2` |          | cmd1's **stdout** → cmd2's **stdin**      |
+| `2>&1 \| cmd` |           | **both** streams → cmd2's stdin           |
+
+> **Shorthand:** `cmd |& cmd2` is bash 4+ shorthand for `cmd 2>&1 | cmd2`. It
+> works on any modern Linux (bash 4.0+, shipped since 2009), but `2>&1 |` is the
+> portable form that runs everywhere — including minimal container images that
+> ship `dash` or BusyBox `ash` as `/bin/sh`. Prefer `2>&1 |` in scripts.
+
+#### 4. ⚠️ Order matters — the classic trap
+
+`2>&1` copies wherever stdout points **at that exact moment**, so position
+changes the result completely:
+
+```bash
+cmd > file 2>&1     # stdout→file, THEN stderr→(same file). BOTH in file ✅
+cmd 2>&1 > file     # stderr→terminal (stdout is still there), THEN stdout→file ❌
+```
+
+**Rule: put the file redirect first, `2>&1` last.**
+
+#### 5. `/dev/null` — the trash can
+
+A special file that discards everything written to it. Used when you only care
+whether a command **succeeded**, not what it printed:
+
+| Redirect       | Trashes            |
+|----------------|--------------------|
+| `> /dev/null`  | stdout only        |
+| `2> /dev/null` | stderr only        |
+| `&> /dev/null` | both               |
+
+```bash
+if command -v nginx &> /dev/null; then echo "installed"; fi   # silent check
+find / -name "x" 2>/dev/null                                   # hide permission errors
+```
+
+#### 6. `tee` — screen **and** file at the same time ⭐ NEW
+
+`>` sends output to a file, but then you **can't see it**. `tee` splits the
+stream in two: one copy to the file, one copy onward to your screen. (Named
+after a plumbing **T-joint** — one pipe in, two out.)
+
+```bash
+echo "hello" | tee out.txt          # prints "hello" AND writes it to out.txt
+echo "more"  | tee -a out.txt       # -a = APPEND (default overwrites!)
+echo "x" | tee f1.txt f2.txt        # write to several files at once
+echo "x" | tee out.txt > /dev/null  # file only, keep the screen quiet
+```
+
+**The Day 45 pattern** — capture *everything* to a timestamped log while still
+watching it live:
+
+```bash
+./deploy.sh 2>&1 | tee "deploy_$(date +%Y%m%d_%H%M%S).log"
+```
+
+Reading it left to right: `2>&1` merges stderr into stdout so **both** go into
+the pipe, then `tee` writes them to the log **and** passes them to your terminal.
+
+> ✅ Verified: with `2>&1 | tee all.log`, both the normal line and the error line
+> appear on screen *and* inside `all.log`. Without the `2>&1`, errors bypass the
+> pipe and never reach the file.
+
+##### ⚠️ The `tee` gotcha: it hides the exit code
+
+A pipeline's exit code is the **last** command's — and the last command is
+`tee`, which almost always succeeds. So failures vanish:
+
+```bash
+false | tee log.txt ; echo $?     # → 0   ❌ the failure is invisible!
+```
+
+Two fixes (both verified):
+
+```bash
+set -o pipefail                    # pipeline fails if ANY part fails
+false | tee log.txt ; echo $?      # → 1   ✅
+
+false | tee log.txt
+echo "${PIPESTATUS[*]}"            # → "1 0"  ✅ exit code of EVERY stage
+```
+
+`set -euo pipefail` already includes `pipefail` — one more reason strict mode is
+a habit. `${PIPESTATUS[@]}` gets its own deep dive on **Day 55**.
+
+#### 7. `exec` — redirect the **whole script** at once ⭐ NEW
+
+Instead of adding `>> log` to every line, `exec` re-points the script's own
+streams **from that line onward**:
+
+```bash
+#!/bin/bash
+exec > script.log 2>&1      # EVERYTHING from here goes to script.log
+echo "line one"             # → into the file, not the screen
+echo "an error" >&2         # → also into the file
+```
+
+> ✅ Verified: nothing appears on screen; both lines land in `script.log`.
+
+**The production logging pattern** — combine `exec` with `tee` so the whole
+script logs to a file *and* stays visible (this is what Day 56 wants):
+
+```bash
+#!/bin/bash
+exec > >(tee -a "run.log") 2>&1     # everything: screen + log, appended
+echo "this shows on screen AND in run.log"
+```
+
+The `>( ... )` there is process substitution — see §8 below.
+
+##### Custom file descriptors (3 and up)
+
+FDs 0/1/2 are reserved, but **3–9 are yours**. Handy for a separate audit or
+debug channel that doesn't mix into normal output:
+
+```bash
+exec 3> audit.log        # open FD 3, pointing at audit.log
+echo "normal output"     # → screen
+echo "audit entry" >&3   # → audit.log only
+exec 3>&-                # close FD 3 (the &- means "close")
+```
+
+> ✅ Verified: "normal output" hits the screen, "audit entry" goes only into
+> `audit.log`. Always close with `exec 3>&-` when you're done.
+
+#### 8. Process substitution `<( )` and `>( )` ⭐ NEW
+
+Some commands demand **filenames**, not piped input — `diff` and `comm` are the
+classic examples. You can't do `sort a | diff sort b`. Process substitution
+solves this: it runs a command and hands over its output **as if it were a
+file**.
+
+```bash
+diff <(sort listA.txt) <(sort listB.txt)      # diff two sorted lists, no temp files
+comm <(sort listA.txt) <(sort listB.txt)      # 3 columns: only-A | only-B | both
+```
+
+> ✅ Verified on two sample lists — `comm` printed `apple` in column 1 (only in
+> A), `date` in column 2 (only in B), and `banana`/`cherry` in column 3 (both).
+> This is **exactly** the Day 59 exercise (diffing two environments).
+
+| Form    | Direction | Means                                            |
+|---------|-----------|--------------------------------------------------|
+| `<(cmd)`| **read**  | cmd's output appears as a file to read **from**  |
+| `>(cmd)`| **write** | writing to it feeds cmd's stdin (used in §7's `exec > >(tee log)`) |
+
+Useful `comm` flags: `comm -12 a b` = only lines in **both**; `comm -23 a b` =
+only in the **first**. (Suppress column N with `-N`.)
+
+> ⚠️ `comm` and `diff` require **sorted** input — that's why `sort` is inside
+> each substitution.
+
+#### 9. "I want to…" — the decision table
+
+| Goal                                        | Use this                        |
+|---------------------------------------------|---------------------------------|
+| Save output to a file                       | `cmd > out.txt`                 |
+| Append instead of overwrite                 | `cmd >> out.txt`                |
+| Capture only errors                         | `cmd 2> err.txt`                |
+| Print **my own** error / usage message      | `echo "Usage: …" >&2`           |
+| Log everything (output **and** errors)      | `cmd > all.log 2>&1`            |
+| Silence everything                          | `cmd &> /dev/null`              |
+| Output and errors in **separate** files     | `cmd > out.txt 2> err.txt`      |
+| See output **and** save it                  | `cmd 2>&1 \| tee out.log`       |
+| Log the **entire script**                   | `exec > script.log 2>&1`        |
+| Log entire script **and** show it           | `exec > >(tee -a run.log) 2>&1` |
+| A separate audit/debug channel              | `exec 3> audit.log` … `>&3`     |
+| Compare two commands' output                | `diff <(cmd1) <(cmd2)`          |
+| Feed a file into a command                  | `cmd < input.txt`               |
+| Feed a literal string in                    | `cmd <<< "text"`                |
+| Catch a failure inside a pipeline           | `set -o pipefail` / `${PIPESTATUS[@]}` |
+
+#### 10. Where this shows up next
+
+| Day | What it needs from this section        |
+|-----|----------------------------------------|
+| 40  | `curl -s -o /dev/null -w '%{http_code}'` |
+| 44  | `: > file` truncation, gzip of rotated logs |
+| **45** | **`2>&1 \| tee` — the whole exercise** |
+| 48  | `tail -Fn0 file \| while read -r line` |
+| **55** | **`${PIPESTATUS[@]}` — the tee gotcha above** |
+| **56** | **`exec > >(tee)` for the logging function** |
+| **59** | **`comm`/`diff` with `<( )` process substitution** |
+| 60  | all of it — logging, traps, strict mode |
+
+#### Key takeaways
+- **FDs:** 0 = stdin, 1 = stdout, 2 = stderr. Both 1 and 2 default to the screen.
+- **The rule:** no `&` → filename; with `&` → stream number. `N>&M` = "point N
+  where M points."
+- **Order matters:** `> file 2>&1` ✅ — never `2>&1 > file` ❌.
+- **Real output → stdout; errors/logs → stderr (`>&2`).** Keeps pipes clean.
+- **`tee`** = screen *and* file. Use `-a` to append, and **`pipefail`** so it
+  doesn't swallow failures.
+- **`exec > log 2>&1`** redirects the whole script; `exec 3>` opens your own
+  channel; close it with `exec 3>&-`.
+- **`<(cmd)`** makes a command's output look like a file — the key to `diff`/`comm`.
+
 #### Day 0 key takeaways
 - Terminal = window, **shell** = engine, **Bash** = one engine. A script is just
   typed commands saved in a file.
@@ -728,6 +979,8 @@ clean up old backups.
 - The shebang `#!/bin/bash` must be **line 1**.
 - **Quote your variables:** `"$var"` and `"${arr[@]}"`.
 - Three streams: stdin(0), stdout(1), stderr(2); redirect with `> >> 2> &>`.
+  **`tee`** = screen + file; **`exec > log 2>&1`** = whole script; **`<(cmd)`** =
+  output-as-a-file. Full guide in **§19**.
 - **Exit codes:** 0 = success; `$?` = last code; chain with `&&`/`||`.
 - **`export`** makes a var inherit into child processes; `$PATH` is where commands
   are found.
@@ -1323,6 +1576,10 @@ cmd 2>&1 > file     # stderr→terminal (stdout still there), THEN stdout→file
 - `>` overwrites, `>>` appends.
 - `>&2` = my output → stderr; `2>&1` = errors → stdout.
 - Merge both to a file: `> file 2>&1` (or `&> file`) — **redirect order matters**.
+
+> 📖 **Going further — Day 0 §19** consolidates all of this and adds `tee`
+> (screen *and* file), `exec` (redirect a whole script), custom file descriptors,
+> and process substitution `<( )`. Needed for Days 45, 55, 56 and 59.
 
 ---
 
