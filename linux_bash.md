@@ -1,0 +1,5329 @@
+# Linux & Bash — Complete Reference
+
+Everything from my daily practice, reorganised **by topic** instead of by day,
+so it can be read start-to-finish or used to look one thing up.
+
+- Written for **Linux** (bash 4+/5+, GNU coreutils).
+- `(Day N)` tags point at the matching practice exercise in `N_day.sh`.
+- The day-by-day original lives in `learnings.md` — nothing here replaces it.
+
+---
+
+## Contents
+
+**Part I — Foundations**
+
+- [1. Shell, terminal & Bash — what they actually are](#t1)
+- [2. The filesystem & paths](#t2)
+- [3. Essential Linux commands](#t3)
+- [4. File permissions (`rwx`, `chmod`)](#t4)
+- [5. Anatomy of a shell script](#t5)
+- [6. Running a script vs. sourcing it](#t6)
+- [7. Variables & quoting](#t7)
+- [8. Getting help & debugging](#t8)
+- [9. Strict mode (`set -euo pipefail`)](#t9)
+- [10. Exit codes, `$?`, and chaining (`&&`, `||`, `;`)](#t10)
+
+**Part II — The Bash language**
+
+- [11. Command-line arguments (positional parameters)](#t11)
+- [12. Reading input with `read`](#t12)
+- [13. Conditionals — how `if/else` works](#t13)
+- [14. Common Bash operators](#t14)
+- [15. Which bracket to use when — `[ ]` `[[ ]]` `(( ))` `$( )`](#t15)
+- [16. The `case` statement](#t16)
+- [17. Arithmetic & counters](#t17)
+- [18. Regex, validation & `BASH_REMATCH`](#t18)
+- [19. Loops — `for`, `while`, `until`](#t19)
+- [20. Functions](#t20)
+- [21. Arrays (indexed & associative)](#t21)
+- [22. Parameter expansion (string surgery)](#t22)
+- [23. `getopts` — proper flag parsing](#t23)
+
+**Part III — Input & output**
+
+- [24. Redirection & file descriptors — the complete guide](#t24)
+- [25. Worked examples: `>&2`, `/dev/null`, and the operator table](#t25)
+- [26. Heredocs (`<< EOF`) for multi-line output](#t26)
+- [27. Reading a file line by line](#t27)
+
+**Part IV — Text processing**
+
+- [28. Which tool when — grep vs sed vs awk vs cut](#t28)
+- [29. `grep` — find lines by pattern](#t29)
+- [30. `sed` — stream editor (find/replace, delete)](#t30)
+- [31. `awk` — field-by-field processing](#t31)
+- [32. `cut`, `sort`, `uniq` — the pipeline finishers](#t32)
+
+**Part V — Files & the system**
+
+- [33. `find` — searching the filesystem](#t33)
+- [34. Links — symbolic & hard](#t34)
+- [35. Dates, timestamps & duration math](#t35)
+- [36. Compression & archiving (`tar`, `gzip`, `zip`)](#t36)
+- [37. Processes, signals & background jobs](#t37)
+- [38. Users — `id`, `/etc/passwd`, `/etc/shadow`](#t38)
+- [39. Environment variables, `export` & `$PATH`](#t39)
+- [40. Finding & installing tools](#t40)
+
+**Part VI — Real-world DevOps**
+
+- [41. Networking essentials](#t41)
+- [42. Data formats — JSON, YAML, CSV](#t42)
+- [43. Production habits & checklist](#t43)
+
+---
+
+# Quick reference — the building blocks at a glance
+
+*The pieces you assemble in every script. Skim this to revise; follow the
+links for the full treatment.*
+
+These are the pieces you'll assemble in every script. Each has a full section on
+the day it's introduced — this is your **map**:
+
+**Conditionals (`if/else`)** — do something *only if* a condition holds:
+
+```bash
+if [ "$age" -ge 18 ]; then
+    echo "adult"
+elif [ "$age" -ge 13 ]; then
+    echo "teen"
+else
+    echo "child"
+fi
+```
+→ Full detail: **§13**.
+
+**Brackets** — the confusing part, so here's the one-liner (full guide **§15**):
+
+| Bracket   | Use for                          |
+|-----------|----------------------------------|
+| `[[ ]]`   | string/file tests (your default) |
+| `(( ))`   | number tests & math actions      |
+| `$(( ))`  | math you want the **value** of   |
+| `$( )`    | capture a command's **output**   |
+| `${ }`    | a **variable's** value           |
+
+**Arithmetic** — Bash math is **integer only** (`10/3 = 3`):
+
+```bash
+sum=$(( 5 + 3 ))       # 8
+echo $(( 10 % 3 ))     # 1 (remainder)
+```
+→ Full detail: **§17**.
+
+**Loops** — repeat an action:
+
+```bash
+for i in 1 2 3; do echo "$i"; done       # for loop
+for f in *.log; do echo "$f"; done        # loop over files
+
+while [ "$n" -lt 5 ]; do                   # while loop
+    echo "$n"; n=$(( n + 1 ))
+done
+```
+→ Full detail: **§19**.
+
+**Functions** — name a reusable block:
+
+```bash
+greet() {
+    echo "Hello, $1"     # $1 = first argument to the function
+}
+greet "Mahima"           # call it
+```
+→ Full detail: **§20**.
+
+---
+
+# Part I — Foundations
+
+> Everything worth knowing *before* you write your first script.
+
+<a id="t1"></a>
+
+## 1. Shell, terminal & Bash — what they actually are
+
+[↑ Contents](#contents)
+
+Three words people mix up:
+
+| Term         | What it is                                                         |
+|--------------|--------------------------------------------------------------------|
+| **Terminal** | The *window/app* you type into (Terminal.app, iTerm, VS Code term).|
+| **Shell**    | The *program* that reads your commands and runs them.              |
+| **Bash**     | One *specific* shell (Bourne Again SHell). Others: `zsh`, `sh`, `fish`. |
+
+Think of it like a car: the **terminal** is the windshield you look through, the
+**shell** is the engine that does the work, and **Bash** is one brand of engine.
+
+**A shell does two jobs:**
+1. **Interactive** — you type commands one at a time and it responds.
+2. **Scripting** — you put many commands in a file (`.sh`) and run them together.
+
+Bash scripting is just **writing down the same commands** you'd type by hand, so
+the computer can repeat them reliably. If you can do it in the terminal, you can
+script it.
+
+---
+
+<a id="t2"></a>
+
+## 2. The filesystem & paths
+
+[↑ Contents](#contents)
+
+Linux organizes everything in a **tree** starting at `/` (the "root").
+
+```
+/                 <- root of everything
+├── home/         <- users' home directories (/home/<user>)
+│   └── mahima/   <- your home, shortcut: ~
+├── etc/          <- system config files
+├── var/          <- logs, variable data (/var/log)
+├── tmp/          <- temporary files
+└── usr/          <- installed programs (/usr/bin)
+```
+
+**Two ways to name a location:**
+
+| Path type    | Starts with | Meaning                          | Example              |
+|--------------|-------------|----------------------------------|----------------------|
+| **Absolute** | `/`         | full address from root           | `/Users/mahima/a.sh` |
+| **Relative** | not `/`     | from where you *currently* are   | `scripts/a.sh`       |
+
+**Special shortcuts you'll use constantly:**
+
+| Symbol | Means                          |
+|--------|--------------------------------|
+| `~`    | your home directory            |
+| `.`    | the **current** directory      |
+| `..`   | the **parent** directory (one up) |
+| `-`    | the **previous** directory (`cd -`) |
+| `/`    | the root directory             |
+
+```bash
+cd /var/log        # absolute — go exactly there
+cd ..              # up one level
+cd ~               # home
+cd -               # back to where I just was
+pwd                # "print working directory" — where am I?
+```
+
+---
+
+<a id="t3"></a>
+
+## 3. Essential Linux commands
+
+[↑ Contents](#contents)
+
+You must be fluent with these before scripting — a script is just these
+commands stacked up.
+
+**Navigation & looking around**
+
+| Command | What it does                        | Common use          |
+|---------|-------------------------------------|---------------------|
+| `pwd`   | print current directory             | `pwd`               |
+| `ls`    | list files                          | `ls -la` (all + details) |
+| `cd`    | change directory                    | `cd /tmp`           |
+| `tree`  | show directory as a tree            | `tree -L 2`         |
+
+**Working with files & directories**
+
+| Command | What it does                        | Example                    |
+|---------|-------------------------------------|----------------------------|
+| `touch` | create an empty file / update time  | `touch app.log`            |
+| `mkdir` | make a directory                    | `mkdir -p a/b/c` (nested)  |
+| `cp`    | copy                                | `cp a.txt b.txt`           |
+| `mv`    | move **or rename**                  | `mv old.txt new.txt`       |
+| `rm`    | remove (⚠️ no undo!)                | `rm file`, `rm -r dir`     |
+| `ln -s` | symbolic link (shortcut)            | `ln -s target link`        |
+
+> ⚠️ `rm -rf` deletes recursively with **no confirmation and no trash**. Double-
+> check the path every single time. There is no undo.
+
+**Viewing file contents**
+
+| Command | What it does                             | Example              |
+|---------|------------------------------------------|----------------------|
+| `cat`   | dump whole file                          | `cat file.txt`       |
+| `less`  | scroll a file page by page (`q` to quit) | `less big.log`       |
+| `head`  | first lines (default 10)                 | `head -n 20 file`    |
+| `tail`  | last lines; `-f` follows live            | `tail -f app.log`    |
+| `wc`    | count lines/words/chars                  | `wc -l file` (lines) |
+
+**Searching & filtering** (the DevOps bread-and-butter)
+
+| Command | What it does                              | Example                    |
+|---------|-------------------------------------------|----------------------------|
+| `grep`  | find lines matching a pattern             | `grep "ERROR" app.log`     |
+| `find`  | find files by name/type/age               | `find . -name "*.sh"`      |
+| `sort`  | sort lines                                | `sort names.txt`           |
+| `uniq`  | collapse/count duplicate lines            | `sort f \| uniq -c`        |
+| `cut`   | slice columns                             | `cut -d, -f1 data.csv`     |
+| `awk`   | field-based text processing               | `awk '{print $1}' file`    |
+| `sed`   | stream editor (find/replace)              | `sed 's/a/b/g' file`       |
+
+**Finding a directory specifically**
+
+| Command                        | Finds a directory by…       |
+|--------------------------------|-----------------------------|
+| `find . -type d -name "logs"`  | name, walking the tree      |
+| `find / -type d -name "x" 2>/dev/null` | name, from root (silence errors) |
+| `locate logs`                  | a prebuilt name index (fast; run `updatedb` first) |
+| `ls -d */`                     | listing dirs in the current folder |
+| `pwd`                          | telling you where you are now |
+
+> `-type d` = **directories only** (`-type f` = files). `2>/dev/null` throws away
+> "permission denied" noise (§25). Same tools apply to Day 17 (looping over
+> files) and Day 31 (finding the largest files).
+
+**System & process info**
+
+| Command    | What it does                        |
+|------------|-------------------------------------|
+| `whoami`   | your username (Day 1 used this)     |
+| `date`     | current date/time                   |
+| `df -h`    | disk space, human-readable          |
+| `du -h`    | directory sizes                     |
+| `ps aux`   | running processes                   |
+| `top`      | live process monitor                |
+| `kill PID` | stop a process                      |
+| `chmod`    | change permissions (Section 4)      |
+| `man CMD`  | manual/help for a command           |
+
+> The single most useful pattern: **pipe** commands together with `|` to build
+> power from small tools — `cat access.log | grep 404 | wc -l` = "how many 404s?"
+> (Pipes explained in Section 7.)
+
+---
+
+<a id="t4"></a>
+
+## 4. File permissions (`rwx`, `chmod`)
+
+[↑ Contents](#contents)
+
+Every file has permissions for three groups of people. Run `ls -l`:
+
+```
+-rwxr-xr--  1 mahima staff  54 Jun 3 file.sh
+ └┬┘└┬┘└┬┘
+  │  │  └── others (everyone else):  r-- = read only
+  │  └───── group:                   r-x = read + execute
+  └──────── owner (you):             rwx = read + write + execute
+```
+
+Each slot is three bits — **r**ead, **w**rite, e**x**ecute:
+
+| Letter | On a file            | On a directory                  |
+|--------|----------------------|----------------------------------|
+| `r`    | read its contents    | list what's inside               |
+| `w`    | modify it            | create/delete files inside       |
+| `x`    | **run** it as a program | `cd` into it                  |
+
+**The octal (number) shortcut** — add the values in each group:
+
+| Permission | r=4 | w=2 | x=1 | Total |
+|------------|-----|-----|-----|-------|
+| `rwx`      | 4   | 2   | 1   | **7** |
+| `rw-`      | 4   | 2   | 0   | **6** |
+| `r-x`      | 4   | 0   | 1   | **5** |
+| `r--`      | 4   | 0   | 0   | **4** |
+
+So `chmod 755 file` = `rwx` for owner, `r-x` for group, `r-x` for others — the
+classic "executable script" permission.
+
+```bash
+chmod +x script.sh     # add execute (simplest, most common)
+chmod 755 script.sh    # same result via octal
+chmod 644 notes.txt    # rw-r--r-- : owner edits, others read (normal file)
+```
+
+> This is **why** `./script.sh` needs `chmod +x` first (Day 1): without the `x`
+> bit, the system refuses to run it as a program.
+
+---
+
+<a id="t5"></a>
+
+## 5. Anatomy of a shell script
+
+[↑ Contents](#contents)
+
+A script is just a text file of commands. Three things make it "a script":
+
+```bash
+#!/bin/bash          # 1. the SHEBANG — must be the VERY first line
+echo "Hello"         # 2. your commands, top to bottom
+```
+
+1. **The shebang `#!/bin/bash`** — tells the system which interpreter to use.
+   It **must** be line 1, character 1 (the kernel reads the first two bytes `#!`).
+   Putting a comment or blank line above it **breaks** it.
+2. **Make it executable** — `chmod +x script.sh` (Section 4).
+3. **Run it** — three ways (full detail in Day 1):
+
+| Command            | Runs in        | Needs `+x`? | Uses shebang? |
+|--------------------|----------------|-------------|---------------|
+| `./script.sh`      | child subshell | yes         | yes           |
+| `bash script.sh`   | child subshell | no          | no            |
+| `source script.sh` | current shell  | no          | no            |
+
+> `#` starts a **comment** — everything after it on the line is ignored (except
+> the shebang, which is special). Use comments to explain *why*, not *what*.
+
+---
+
+<a id="t6"></a>
+
+## 6. Running a script vs. sourcing it
+
+[↑ Contents](#contents)
+
+**Execution forks a subshell; sourcing runs in-place.** Sourcing is how things
+like `~/.bashrc`, `nvm`, and `.env` loaders work — they *need* their variables
+to persist in your current shell.
+
+| How you run it     | Runs in         | Affects terminal's variables? |
+|--------------------|-----------------|-------------------------------|
+| `./day_1.sh`       | child subshell  | No                            |
+| `bash day_1.sh`    | child subshell  | No                            |
+| `source day_1.sh`  | current shell   | **Yes**                       |
+| `. day_1.sh`       | current shell   | **Yes**                       |
+
+(`.` is just the POSIX short form of `source` — identical behaviour.)
+
+### Extra nuances (interview-worthy)
+- A **subshell** gets a *copy* of the parent's environment. Variables it sets,
+  `cd`s it does, etc. vanish when it exits — that's why `./script.sh` can't
+  change your current directory.
+- `export`ed variables are *inherited* by the child (read access), but the
+  child still can't push changes back up to the parent.
+- `./day_1.sh` needs the **execute permission** (`chmod +x`) and uses the
+  script's shebang (`#!/bin/bash`) to pick the interpreter. `bash day_1.sh`
+  ignores the shebang and doesn't need `+x`.
+- `exit` inside a **sourced** script will close your *current* shell (it runs
+  in-place!). Use `return` in scripts meant to be sourced.
+
+---
+
+---
+
+<a id="t7"></a>
+
+## 7. Variables & quoting
+
+[↑ Contents](#contents)
+
+```bash
+name="Mahima"        # NO spaces around = ! (name = "x" is an error)
+echo "$name"         # use $ to read it back -> Mahima
+echo "${name}"       # braces when you need a clear boundary
+```
+
+| Rule                          | Why                                            |
+|-------------------------------|------------------------------------------------|
+| No spaces around `=`          | `x = 5` is read as a *command* `x` with args    |
+| `$name` reads the value       | without `$` it's just the literal text "name"   |
+| **Always quote:** `"$name"`   | prevents word-splitting when the value has spaces |
+
+**Quoting — the #1 beginner bug (and interview topic):**
+
+| Quote     | Effect                                         | `echo` of `x="a b"` |
+|-----------|------------------------------------------------|---------------------|
+| `"..."`   | expands variables, keeps spaces intact         | `a b`               |
+| `'...'`   | **literal** — no `$` expansion at all           | `$x`                |
+| no quotes | expands **and** word-splits (danger!)           | `a b` (as 2 words)  |
+
+```bash
+x="a b"
+echo "$x"    # a b   (one argument — correct)
+echo '$x'    # $x    (single quotes = literal)
+echo $x      # a b   (but passed as TWO words — bugs!)
+```
+
+Rule of thumb: **double-quote every variable** unless you have a specific reason
+not to. (This connects to §11 quoting and §18 validation.)
+
+---
+
+<a id="t8"></a>
+
+## 8. Getting help & debugging
+
+[↑ Contents](#contents)
+
+You will not memorize everything — knowing **how to look things up** is the real
+skill.
+
+| Tool                | What it does                                  |
+|---------------------|-----------------------------------------------|
+| `man ls`            | full manual for a command (`q` to quit)       |
+| `ls --help`         | quick built-in help summary                    |
+| `type cmd`          | is it a builtin, alias, or program?           |
+| `which cmd`         | path to the program                           |
+| `help if`           | help for Bash **builtins** (`if`, `cd`, etc.) |
+
+**Debugging your scripts:**
+
+```bash
+bash -x script.sh      # TRACE: prints each line as it runs (super useful)
+bash -n script.sh      # syntax-check WITHOUT running it
+set -x                 # turn tracing on partway through a script
+set +x                 # turn it back off
+```
+
+**`shellcheck`** — a linter that catches bugs before you run. Install it via your
+package manager (e.g. `apt install shellcheck` / `yum install ShellCheck`), then
+`shellcheck script.sh`. It flags unquoted variables, wrong brackets, and the
+exact gotchas in these notes. **Use it on every script** — the practice bank
+recommends it too.
+
+---
+
+<a id="t9"></a>
+
+## 9. Strict mode (`set -euo pipefail`)
+
+[↑ Contents](#contents)
+
+Serious scripts open with this line. You'll understand each flag by Day 38, but
+start using it now:
+
+```bash
+set -euo pipefail
+```
+
+| Flag          | Effect                                                    |
+|---------------|-----------------------------------------------------------|
+| `set -e`      | exit immediately if any command fails                     |
+| `set -u`      | error on use of an **undefined** variable (catches typos) |
+| `set -o pipefail` | a pipeline fails if **any** stage fails, not just the last |
+
+Without these, a failing command is silently ignored and the script keeps going
+with bad data — the source of many real outages.
+
+---
+
+<a id="t10"></a>
+
+## 10. Exit codes, `$?`, and chaining (`&&`, `||`, `;`)
+
+[↑ Contents](#contents)
+
+**Every command returns an exit code** when it finishes — a number the shell uses
+to know whether it worked:
+
+- **`0` = success**, **non-zero (1–255) = failure**. (Backwards from "true=1"!)
+- **`$?`** holds the exit code of the **last** command you ran.
+
+```bash
+ls /tmp;      echo "$?"    # 0  (worked)
+ls /nope;     echo "$?"    # non-zero (failed)
+```
+
+This is the engine behind `if` (Day 9/12), functions (§2), and everything with a
+condition. **Chain commands** based on success/failure:
+
+| Operator | Runs the next command… | Example |
+|----------|------------------------|---------|
+| `A ; B`  | **always** (just sequence) | `cd /tmp ; ls` |
+| `A && B` | only if **A succeeded** (exit 0) | `mkdir d && cd d` |
+| `A \|\| B`| only if **A failed** (non-zero) | `ping -c1 host \|\| echo "down"` |
+
+```bash
+grep -q ERROR log && echo "errors found"       # do B only if grep matched
+mkdir /data || echo "couldn't make dir" >&2     # do B only if mkdir failed
+command_that_might_fail || exit 1               # bail out on failure
+```
+> `&&`/`||` are **short-circuit**: `B` runs only when needed. This is why `set -e`
+> (§10) matters — it makes the *script itself* stop on the first non-zero exit.
+> Your own scripts should `exit 0` on success, `exit 1+` on failure (Day 8, 14).
+
+---
+
+# Part II — The Bash language
+
+> The syntax you'll use in every script.
+
+<a id="t11"></a>
+
+## 11. Command-line arguments (positional parameters)
+
+[↑ Contents](#contents)
+
+In Bash, command-line arguments are captured automatically using **positional
+parameters** like `$1`, `$2`, `$3` — the number is the position of the argument
+passed on the command line.
+
+### Special argument variables
+
+| Variable      | Meaning                                                        |
+|---------------|---------------------------------------------------------------|
+| `$0`          | Name of the script being executed.                            |
+| `$1` … `$9`   | The first nine command-line arguments.                        |
+| `${10}` and up| Arguments past the ninth must be wrapped in curly braces.     |
+| `$#`          | Total number of arguments passed.                             |
+| `$@`          | All arguments as a list/array — **best for looping**.         |
+| `$*`          | All arguments combined into a single string.                  |
+
+### Key takeaways
+- Always **quote** them: `"$1"`, `"$@"` — unquoted values break on spaces.
+- `"$@"` vs `"$*"`: `"$@"` keeps each argument separate; `"$*"` joins them
+  into one string. Use `"$@"` when looping.
+- Validate input with `$#` and exit non-zero on bad input: `exit 1`.
+
+### Method 1: Basic positional parameters (best for simple scripts)
+
+If you just need a few explicit inputs, read them directly using numbers.
+
+```bash
+#!/bin/bash
+
+# Assign to descriptive variables for readability
+FIRST_NAME="$1"
+LAST_NAME="$2"
+
+echo "The script name is: $0"
+echo "Hello, $FIRST_NAME $LAST_NAME!"
+echo "Total arguments passed: $#"
+```
+
+**Execution:**
+
+```bash
+$ ./script.sh John Doe
+The script name is: ./script.sh
+Hello, John Doe!
+Total arguments passed: 2
+```
+
+> Note: Always use double quotes around variables (e.g. `"$1"`) to prevent
+> issues if an argument contains spaces.
+
+### Method 2: Looping through a variable number of arguments
+
+If your script handles an unknown or variable number of arguments (like a list
+of files), loop over the `"$@"` list.
+
+```bash
+#!/bin/bash
+
+echo "Processing $# items..."
+
+# Loop through each argument individually
+for item in "$@"; do
+    echo "Item: $item"
+done
+```
+
+**Execution:**
+
+```bash
+$ ./script.sh file1.txt file2.txt file3.txt
+Processing 3 items...
+Item: file1.txt
+Item: file2.txt
+Item: file3.txt
+```
+
+---
+
+<a id="t12"></a>
+
+## 12. Reading input with `read`
+
+[↑ Contents](#contents)
+
+> Covers both interactive prompts and reading piped/file input line by line.
+
+Until now your scripts got their input from **arguments** (`$1`, `$2` — Day 2).
+`read` is the other way: it **pauses the script and waits for the user to type**
+something, then stores it in a variable.
+
+```bash
+read -p "Enter a directory path: " path
+```
+
+Piece by piece:
+
+| Piece                          | Meaning                                             |
+|--------------------------------|-----------------------------------------------------|
+| `read`                         | the command — read one line from input (stdin)      |
+| `-p "Enter a directory path: "`| **p**rint this prompt first (no newline after it)   |
+| `path`                         | the **variable** the typed text gets stored in      |
+
+After that line runs, whatever the user typed is in `$path`, and you use it like
+any variable — quoted: `"$path"`.
+
+```bash
+read -p "Enter a directory path: " path
+echo "You typed: $path"
+```
+
+### If you don't name a variable, it goes into `$REPLY`
+
+```bash
+read -p "Continue? "        # no variable named
+echo "You said: $REPLY"     # bash stores it in REPLY by default
+```
+
+### Reading several values at once
+
+`read` splits the typed line on spaces into the variables you list:
+
+```bash
+read -p "First and last name: " first last
+echo "Hi $first, surname $last"     # input "Ada Lovelace" -> first=Ada last=Lovelace
+```
+
+(The last variable soaks up **all** the remaining words.)
+
+### Useful `read` flags
+
+| Flag  | What it does                                   | Example                        |
+|-------|------------------------------------------------|--------------------------------|
+| `-p`  | show a **prompt** first                        | `read -p "Name: " n`           |
+| `-r`  | **raw** — don't let `\` act as an escape (use this by default) | `read -r line`   |
+| `-s`  | **silent** — don't echo typing (passwords)     | `read -s -p "Password: " pw`   |
+| `-t`  | **timeout** in seconds                         | `read -t 5 -p "Quick! " x`     |
+| `-n`  | stop after **N characters** (no Enter needed)  | `read -n 1 -p "Y/N? " ans`     |
+| `-a`  | read words into an **array**                   | `read -a words`                |
+
+### Two habits worth building now
+
+**1. Prefer `read -r`.** Without `-r`, Bash treats a backslash as an escape
+character and mangles input. Verified:
+
+```bash
+read x    <<< 'a\tb'   # x = a\tb typed...  -> becomes "atb"  (backslash eaten) ❌
+read -r y <<< 'a\tb'   # -> stays "a\tb"  (literal) ✅
+```
+
+**2. `IFS= read -r line` when you want the whole line exactly.** Plain `read`
+strips leading/trailing spaces; `IFS=` keeps them:
+
+```bash
+read z        <<< "   spaced   "   # -> "spaced"        (trimmed)
+IFS= read -r w <<< "   spaced   "   # -> "   spaced   "  (preserved)
+```
+
+This `while IFS= read -r line` pattern is the correct way to read a file line by
+line — you'll use it in Day 21 and it's a classic interview point (Day 52).
+
+
+Your Day 4 task: prompt for a directory path, then report whether it **exists**,
+and if so whether it's **readable** and **writable**. This combines `read`
+(Section 1) with the file-test operators (§14: `-d`, `-r`, `-w`).
+
+```bash
+#!/bin/bash
+read -p "Enter a directory path: " path
+
+if [[ -d "$path" ]]; then
+    echo "directory exists"
+    if [[ -r "$path" ]]; then
+        echo "directory is readable"
+    fi
+    if [[ -w "$path" ]]; then
+        echo "directory is writable"
+    fi
+else
+    echo "directory does not exist"
+fi
+```
+
+How it flows:
+
+1. `read` pauses and stores what you type in `$path`.
+2. `[[ -d "$path" ]]` → is it an existing directory? (§14)
+3. If yes, the **nested** `if`s check readable (`-r`) and writable (`-w`)
+   independently — a directory can be one, both, or neither.
+4. If it's not a directory, the `else` reports that.
+
+> Why quote `"$path"`? A user might type a path with spaces like
+> `/Users/mahima/My Folder`. Unquoted, `-d $path` would break into two words and
+> fail (§7, §15). Quoting keeps it as one path.
+
+### Key takeaways
+- `read` waits for typed input; `read -p "prompt" var` is the common form.
+- No variable named → the input lands in `$REPLY`.
+- Default to `read -r`; use `IFS= read -r line` to read a whole line verbatim.
+- Combine `read` with `-d`/`-r`/`-w` tests to validate what the user typed.
+
+---
+
+
+> Two new tools: the `while IFS= read -r line` idiom (the *only* correct way to
+> read a file line by line) and `${#var}` (string length). The §27
+> introduced them; this is the full breakdown, including the edge cases that make
+> them interview favorites.
+
+### The `read` command, in depth
+
+`read` reads **one line** from its input into a variable, and its **exit status**
+tells you whether it got one:
+
+- Returns **`0`** (success) each time it reads a line.
+- Returns **non-zero** when it hits **end-of-file** (nothing left).
+
+That success/failure is what drives the `while` loop — it keeps going until
+`read` fails at EOF (verified):
+
+```bash
+while IFS= read -r line; do
+    echo "$line"
+done < file
+```
+
+`read` on its own (from §12) waits for keyboard input; here we redirect a
+**file** into it with `< file`, so it reads the file instead.
+
+### The `while IFS= read -r line` idiom, dissected
+
+Every piece of this line is there for a reason — leave one out and you get subtle
+bugs:
+
+```bash
+while IFS= read -r line; do ... done < file
+```
+
+| Piece      | What it does | What breaks without it |
+|------------|--------------|------------------------|
+| `while`    | loop as long as `read` succeeds (a line was read) | — |
+| `IFS=`     | set field separator to **empty** for this command | leading/trailing **spaces get trimmed** off each line |
+| `read`     | read one line into a variable | — |
+| `-r`       | **raw** mode | a `\` in the line is treated as an **escape** and mangled |
+| `line`     | the variable the line lands in | — |
+| `< file`   | feed the file into `read`'s stdin | reads from the keyboard instead |
+
+- **`IFS=`** — `IFS` (Internal Field Separator) is what bash splits on. Setting it
+  empty **just for this command** (the `IFS= read` prefix) means the whole line,
+  spaces and all, goes into `line` untouched.
+- **`-r`** — without it, a line containing `a\tb` would have its `\` interpreted.
+  `-r` keeps text **literal**. (You verified this back in §12.)
+
+> Placing `IFS=` right before `read` on the same line sets it **only for that
+> command** — it doesn't change `IFS` for the rest of the script. A clean trick.
+
+### ⚠️ The last-line-without-a-newline trap
+
+A file's last line sometimes has **no trailing newline** (many editors, `printf`
+without `\n`, some logs). Plain `while read` **silently skips that last line** —
+because `read` reads the text but returns **non-zero** (EOF) at the same moment,
+so the loop body never runs for it.
+
+```bash
+printf 'line1\nline2\nlast'    # 'last' has NO newline after it
+
+while IFS= read -r line; do echo "$line"; done   # prints line1, line2 — MISSES 'last' ❌
+```
+
+The fix — also run the body when `read` failed **but** still put something in
+`line`:
+
+```bash
+while IFS= read -r line || [[ -n "$line" ]]; do
+    echo "$line"
+done < file
+```
+
+> Verified: the plain loop dropped `last`; the `|| [[ -n "$line" ]]` version caught
+> it. This is a classic gotcha — worth knowing for interviews and for real log
+> files that don't end in a newline.
+
+---
+
+<a id="t13"></a>
+
+## 13. Conditionals — how `if/else` works
+
+[↑ Contents](#contents)
+
+Every conditional block **starts with `if`**, introduces actions with **`then`**,
+and **closes with `fi`** (`if` spelled backward).
+
+**1. Basic `if`** — runs code only if the condition is true.
+
+```bash
+if [ condition ]; then
+    # Code runs if condition is true
+fi
+```
+
+**2. `if-else`** — a fallback block when the condition is false.
+
+```bash
+if [ condition ]; then
+    # Code runs if condition is true
+else
+    # Code runs if condition is false
+fi
+```
+
+**3. `if-elif-else`** — handle multiple conditions without deep nesting.
+
+```bash
+if [ condition1 ]; then
+    # Runs if condition1 is true
+elif [ condition2 ]; then
+    # Runs if condition1 is false AND condition2 is true
+else
+    # Runs if all previous conditions fail
+fi
+```
+
+### Brackets and tests
+
+The brackets you choose decide how the condition is processed:
+
+- **Single brackets `[ ... ]`** — an alias for the classic `test` command.
+  Spaces are **strictly required** after `[` and before `]`.
+- **Double brackets `[[ ... ]]`** — an enhanced Bash-specific keyword. Safer:
+  it prevents word splitting and supports regex (`=~`) and wildcards. Prefer
+  this in Bash.
+- **Double parentheses `(( ... ))`** — used **exclusively** for math and integer
+  comparisons.
+
+---
+
+<a id="t14"></a>
+
+## 14. Common Bash operators
+
+[↑ Contents](#contents)
+
+### Number comparisons (inside `[ ]` / `[[ ]]`)
+
+Numeric tests use **flag-based** operators, not math symbols.
+
+| Operator | Meaning                  | Example              |
+|----------|--------------------------|----------------------|
+| `-eq`    | Equal to                 | `[ "$a" -eq "$b" ]`  |
+| `-ne`    | Not equal to             | `[ "$a" -ne "$b" ]`  |
+| `-gt`    | Greater than             | `[ "$a" -gt 10 ]`    |
+| `-lt`    | Less than                | `[ "$a" -lt "$b" ]`  |
+| `-ge`    | Greater than or equal to | `[ "$a" -ge "$b" ]`  |
+| `-le`    | Less than or equal to    | `[ "$a" -le "$b" ]`  |
+
+> Note: Inside double parentheses `(( a > b ))` you can use the standard math
+> symbols `>`, `<`, `==` directly.
+
+### String comparisons
+
+Always wrap string variables in double quotes so the script doesn't break when a
+variable is empty.
+
+- `=` or `==` — true if the strings match.
+- `!=` — true if the strings do **not** match.
+- `-z` — true if the string is empty.
+- `-n` — true if the string is **non**-empty.
+
+### File checks
+
+- `-e` — true if the file or directory **exists**.
+- `-f` — true if it exists and is a **regular file** (not a folder).
+- `-d` — true if the path is a **directory**.
+- `-r` — true if the path is **readable**.
+- `-w` — true if the path is **writable**.
+- `-x` — true if the path is **executable** (mirrors the `x` bit, §4).
+- `-L` — true if the path is a **symlink** (also `-h`). Unlike the others it
+  checks the **link itself** and does **not** follow it to the target (Day 7).
+- `-s` — true if the file exists and is **not empty** (size > 0).
+
+> These are exactly what **Day 4** needs — "does it exist? (`-d`) is it readable?
+> (`-r`) writable? (`-w`)". Always quote the path: `[[ -d "$path" ]]`, since a
+> user might type a path containing spaces.
+
+### Complete practical example
+
+Combines numeric evaluation, string/file checks, and validation:
+
+```bash
+#!/bin/bash
+
+# 1. Numerical evaluation using double parentheses
+SCORE=85
+
+if (( SCORE >= 90 )); then
+    echo "Grade: A"
+elif (( SCORE >= 80 )); then
+    echo "Grade: B"
+else
+    echo "Grade: C"
+fi
+
+# 2. String & file check using double brackets
+FILE_PATH="./config.json"
+
+if [[ -f "$FILE_PATH" ]]; then
+    echo "The file exists."
+else
+    echo "Error: Configuration file is missing!"
+fi
+```
+
+> ⚠️ Gotcha: the source for this example had `if (( SCORE >= 90 ]]; then` —
+> that's **invalid** because it opens with `((` but closes with `]]`. Brackets
+> must match: `(( ... ))`, `[[ ... ]]`, or `[ ... ]`. Mixing them is a syntax
+> error.
+
+---
+
+<a id="t15"></a>
+
+## 15. Which bracket to use when — `[ ]` `[[ ]]` `(( ))` `$( )`
+
+[↑ Contents](#contents)
+
+Bash has **seven** bracket-ish constructs and they are NOT interchangeable. Here
+is the whole map, then the details.
+
+| Construct    | Name                    | Used for                          | Gives you        |
+|--------------|-------------------------|-----------------------------------|------------------|
+| `[ ... ]`    | test command (POSIX)    | conditions (old/portable)         | exit code        |
+| `[[ ... ]]`  | test keyword (Bash)     | conditions (**preferred in Bash**)| exit code        |
+| `(( ... ))`  | arithmetic evaluation   | math **as a test / action**       | exit code        |
+| `$(( ... ))` | arithmetic expansion    | math **you want the value of**    | a **number**     |
+| `$( ... )`   | command substitution    | capture a command's output        | **text** output  |
+| `( ... )`    | subshell                | group commands in a child shell   | (runs commands)  |
+| `{ ...; }`   | command grouping        | group commands in **current** shell| (runs commands) |
+| `{ }`        | brace expansion         | generate lists / sequences        | expanded words   |
+| `${ ... }`   | parameter expansion     | read/modify a variable's value    | a **value**      |
+
+### The two-question decision guide
+
+1. **Am I testing a condition (true/false)?**
+   - Comparing **numbers** → `(( ))` with `>`, `<`, `==`
+   - Comparing **strings** or **files** → `[[ ]]` with `==`, `-z`, `-f`, `=~`
+2. **Am I producing a value to use/store?**
+   - A **number** from math → `$(( ))`
+   - **Text** from a command → `$( )`
+   - A **variable's** value → `${ }`
+
+---
+
+### 1. `[ ... ]` — the old `test` command
+
+Works everywhere (POSIX), but it's **fragile**. It's an ordinary command, so
+unquoted variables word-split and break it:
+
+```bash
+x=""
+[ $x == "a" ]      # ERROR: "unary operator expected" (becomes [ == a ])
+y="a b"
+[ $y == "a b" ]    # ERROR: "too many arguments"
+```
+
+⚠️ **Biggest trap:** inside `[ ]`, `>` and `<` are **redirection**, not comparison:
+
+```bash
+[ 5 > 3 ]          # does NOT compare! creates a file named "3" 😱
+```
+
+Use `[ ]` only for POSIX `sh` scripts. In Bash, reach for `[[ ]]`.
+
+### 2. `[[ ... ]]` — the Bash test keyword (**your default**)
+
+Safer and more powerful. It's a keyword, not a command, so no word-splitting:
+
+```bash
+x=""
+[[ $x == "a" ]]        # false — handles empty safely, even unquoted
+y="a b"
+[[ $y == "a b" ]]      # true  — spaces safe even unquoted
+```
+
+Supports things `[ ]` can't:
+
+```bash
+[[ "$name" == M* ]]              # wildcard/glob matching
+[[ "$num" =~ ^[0-9]+$ ]]         # regex (Section 5)
+[[ -f "$file" && -r "$file" ]]   # && and || work inside
+```
+
+⚠️ **Trap:** inside `[[ ]]`, `<` and `>` compare **strings** (ASCII order), NOT
+numbers:
+
+```bash
+[[ 10 < 9 ]]       # TRUE — because "1" comes before "9" as text! ❌
+[[ 10 -lt 9 ]]     # false — correct, -lt forces numeric compare ✅
+```
+
+So for **numbers inside `[[ ]]`**, use `-lt -gt -eq -ne -le -ge` (§14),
+**not** `<` `>`.
+
+### 3. `(( ... ))` — arithmetic evaluation (math as a test/action)
+
+Best way to compare **numbers**, because you get natural math symbols:
+
+```bash
+if (( num1 > num2 )); then echo "bigger"; fi   # clean numeric compare
+(( count++ ))                                    # perform an action
+(( total += 5 ))
+```
+
+⚠️ **Trap:** `(( ))` returns its result as an exit code, and **`0` is "false"**:
+
+```bash
+(( 1 ))    # exit 0 → true
+(( 0 ))    # exit 1 → FALSE!
+```
+
+This bites with `set -e`: a line like `(( count = 0 ))` "fails" (exit 1) and can
+kill a strict-mode script. Guard it: `(( count = 0 )) || true`.
+
+### 4. `$(( ... ))` — arithmetic expansion (math you want the value of)
+
+Same math, but it **hands back the number** so you can store or print it:
+
+```bash
+sum=$(( num1 + num2 ))         # store the value
+echo "Total: $(( a * b ))"     # print the value
+```
+
+> `(( ))` vs `$(( ))`: the `$` means "**give me the value**." No `$` means
+> "**use it as a true/false test or an action**." (§17.)
+
+### 5. `$( ... )` — command substitution (capture output as text)
+
+Runs a command and substitutes its **text output**:
+
+```bash
+today=$(date +%F)              # today="2026-07-18"
+files=$(ls | wc -l)            # capture a count
+user=$(whoami)                 # Day 1 used this!
+```
+
+Prefer `$( )` over old backticks `` `...` `` — it nests cleanly:
+`outer=$(echo $(date))`.
+
+### 6. `( ... )` vs `{ ...; }` — grouping commands
+
+Both group commands, but the difference is **which shell they run in** — this is
+a favorite interview question:
+
+```bash
+cd /start
+
+( cd /tmp; pwd )      # subshell: prints /tmp
+pwd                   # still /start — the cd was thrown away!
+
+{ cd /tmp; pwd; }     # current shell: prints /tmp
+pwd                   # now /tmp — the cd STUCK
+```
+
+- `( )` = **subshell** (child). Changes (`cd`, variables) vanish when it ends.
+  Great for "do this without disturbing my current shell." (Day 1 subshell idea.)
+- `{ }` = **same shell**. Changes persist. Note the required **spaces inside** and
+  the **`;` before `}`**.
+
+### 7. `{ }` — brace expansion (generate lists) & `${ }` — variables
+
+Confusingly, bare `{ }` with **no `$`** generates lists *before* the command runs:
+
+```bash
+echo {1..5}            # 1 2 3 4 5
+echo {a,c,e}           # a c e
+touch file{1,2,3}.txt  # makes file1.txt file2.txt file3.txt
+cp app.conf{,.bak}     # cp app.conf app.conf.bak  (handy trick!)
+```
+
+And `${ }` (**with** `$`) is parameter expansion — reading/reshaping a variable:
+
+```bash
+name="report.txt"
+echo "${name}"          # report.txt
+echo "${name%.txt}"     # report   (strip suffix — Day 27)
+echo "${#name}"         # 10       (length)
+echo "${name:-default}" # use "default" if name is empty
+```
+
+### Cheat-sheet: the mistakes to never make
+
+| You wrote                | Problem                              | Use instead            |
+|--------------------------|--------------------------------------|------------------------|
+| `[ 5 > 3 ]`              | `>` redirects, makes a file `3`      | `(( 5 > 3 ))`          |
+| `[[ 10 < 9 ]]` for nums  | string compare (`10` < `9`)          | `(( 10 < 9 ))` or `-lt`|
+| `[ $x == a ]` (empty x)  | word-split → syntax error            | `[[ $x == a ]]`        |
+| `if $(( a > b ))`        | `$(( ))` returns a value, not a test | `if (( a > b ))`       |
+| `` x=`cmd` ``            | backticks don't nest well            | `x=$(cmd)`             |
+| `( cd dir )` expecting cd to stick | subshell throws it away    | `{ cd dir; }` or plain `cd` |
+
+### Golden rules
+- **Numbers** → `(( ))` (test) or `$(( ))` (value).
+- **Strings / files** → `[[ ]]`.
+- **Capture output** → `$( )`.
+- **Variable's value** → `${ }`.
+- Avoid `[ ]` in Bash; avoid `<`/`>` for numeric compares.
+
+---
+
+<a id="t16"></a>
+
+## 16. The `case` statement
+
+[↑ Contents](#contents)
+
+### The `case` statement: syntax & anatomy
+
+`case` matches **one value against several patterns** — a cleaner alternative to a
+long `if/elif/elif/else` when you're checking the *same* variable against many
+fixed options.
+
+```bash
+case "$variable" in
+    pattern1)
+        commands
+        ;;
+    pattern2|pattern3)      # | means OR
+        commands
+        ;;
+    *)                      # catch-all (like else)
+        commands
+        ;;
+esac
+```
+
+| Piece            | Meaning                                                      |
+|------------------|-------------------------------------------------------------|
+| `case "$x" in`   | start; match `$x` against the patterns below                |
+| `pattern)`       | a branch — ends with a single `)`                           |
+| `;;`             | **ends each branch** (double semicolon — easy to forget!)   |
+| `a\|b)`          | `\|` = **OR**: match `a` *or* `b`                           |
+| `*)`             | **catch-all** default, matches anything (put it **last**)   |
+| `esac`           | closes the block (`case` spelled backwards, like `if`/`fi`) |
+
+> Always quote the subject: `case "$1" in`. And the `*)` branch should come
+> **last**, because `case` uses the **first** pattern that matches.
+
+### Pattern matching power
+
+`case` patterns aren't plain strings — they're **globs** (the same wildcards as
+filenames, §2), which makes `case` far more powerful than it first looks:
+
+| Pattern       | Matches                                    |
+|---------------|--------------------------------------------|
+| `start`       | exactly `start`                            |
+| `a\|b\|c`     | `a`, `b`, or `c`                           |
+| `*.txt`       | anything ending in `.txt`                  |
+| `*.jpg\|*.png`| any image (combine glob + OR)              |
+| `[Yy]`        | `Y` or `y` (a character set)               |
+| `[Yy][Ee][Ss]`| `yes` in any capitalization                |
+| `?`           | exactly one character                      |
+| `*`           | anything (the catch-all)                   |
+
+Verified examples:
+
+```bash
+case "$file" in
+    *.txt)        echo "text file" ;;
+    *.jpg|*.png)  echo "image" ;;
+    *)            echo "other" ;;
+esac
+
+# case-insensitive yes/no
+case "$answer" in
+    [Yy]|[Yy][Ee][Ss]) echo "YES" ;;
+    [Nn]|[Nn][Oo])     echo "NO"  ;;
+    *)                 echo "unclear" ;;
+esac
+```
+
+### The Day 11 solution (init-script pattern)
+
+Task: accept `start|stop|restart|status` and print what it would do; anything
+else prints usage.
+
+```bash
+#!/bin/bash
+
+case "$1" in
+    start)
+        echo "Starting the service..."
+        ;;
+    stop)
+        echo "Stopping the service..."
+        ;;
+    restart)
+        echo "Restarting the service..."
+        ;;
+    status)
+        echo "Showing service status..."
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}" >&2
+        exit 1
+        ;;
+esac
+```
+
+Two things worth noticing:
+
+1. **No-argument is handled for free.** With no argument, `$1` is empty, which
+   matches none of the four patterns → falls to `*)` → usage + `exit 1`. No
+   separate `$#` check needed. (Verified: no arg → usage, exit 1.)
+2. **Errors → stderr + `exit 1`** in the `*)` branch — the habits from Days 8–9.
+
+> Real-world tie-in: this is the exact shape of `/etc/init.d/` service scripts,
+> and what `systemctl start|stop|restart|status nginx` maps to underneath. The
+> hint "mirrors init-script structure" is literal.
+
+### `case` vs `if/elif`, and fall-through
+
+**Why `case` over `if/elif` here?** You *could* write
+`if [[ "$1" == "start" ]]; then ... elif [[ "$1" == "stop" ]] ...`, but `case` is
+less repetitive, reads top-to-bottom like a table, and supports glob patterns.
+Reach for `case` when matching **one** variable against **many fixed values**;
+reach for `if` when conditions are **different questions** (`-f`, `-gt`, `&&`).
+
+**Branch terminators** — `;;` is what you'll use 99% of the time, but there are
+two fall-through variants:
+
+| Ender | Behavior                                              | Bash version |
+|-------|------------------------------------------------------|--------------|
+| `;;`  | end the branch, **skip** the rest (normal)           | all          |
+| `;&`  | **fall through** and run the next branch unconditionally | **bash 4+** |
+| `;;&` | continue **testing** the remaining patterns          | **bash 4+**  |
+
+> `;&` and `;;&` require **bash 4+** (standard on modern Linux servers). Stick to
+> plain `;;` unless you specifically need fall-through — you rarely will.
+
+#### Key takeaways
+- `case "$x" in … esac`; each branch ends with **`;;`**; `*)` is the catch-all,
+  placed **last**.
+- Patterns are **globs** — `*.txt`, `[Yy]`, `a|b` — not just literal strings.
+- First matching pattern wins, so order from **specific → general**.
+- `case` shines for one-variable-many-values (menus, subcommands, init scripts).
+
+---
+
+---
+
+<a id="t17"></a>
+
+## 17. Arithmetic & counters
+
+[↑ Contents](#contents)
+
+Bash does math inside **double parentheses**: `$(( expression ))`. This is called
+**arithmetic expansion** — Bash evaluates the math and substitutes the result.
+
+```bash
+num1=10
+num2=3
+
+echo "sum=$((num1 + num2))"    # sum=13
+echo "diff=$((num1 - num2))"   # diff=7
+echo "prod=$((num1 * num2))"   # prod=30
+echo "quot=$((num1 / num2))"   # quot=3   <- integer division!
+```
+
+### The `$` is optional inside `(( ))`
+
+Arithmetic context already knows `num1` is a variable, so both forms work:
+
+```bash
+echo $(( num1 + num2 ))     # preferred — cleaner
+echo $(( $num1 + $num2 ))   # also works
+```
+
+### Operators
+
+| Operator | Meaning                        | Example          | Result |
+|----------|--------------------------------|------------------|--------|
+| `+`      | addition                       | `$((5 + 3))`     | `8`    |
+| `-`      | subtraction                    | `$((5 - 3))`     | `2`    |
+| `*`      | multiplication                 | `$((5 * 3))`     | `15`   |
+| `/`      | **integer** division           | `$((10 / 3))`    | `3`    |
+| `%`      | modulo (remainder)             | `$((10 % 3))`    | `1`    |
+| `**`     | exponent (power)               | `$((2 ** 10))`   | `1024` |
+| `++` `--`| increment / decrement          | `(( i++ ))`      | —      |
+| `+=` `-=`| compound assignment            | `(( i += 5 ))`   | —      |
+
+
+**Bash cannot do decimals.** Division **truncates** (chops off the remainder) —
+it does not round.
+
+```bash
+echo $((10 / 3))    # 3     (not 3.33)
+echo $((9 / 10))    # 0     (not 0.9!)
+echo $((7 / 2))     # 3     (not 3.5 — truncated, NOT rounded to 4)
+```
+
+### Use `%` to get the remainder
+
+```bash
+echo $((10 / 3))    # 3  <- how many whole times
+echo $((10 % 3))    # 1  <- what's left over
+```
+
+`%` is essential for things like converting seconds to `Xh Ym Zs` (Day 33).
+
+### Need real decimals? Use `bc` or `awk`
+
+```bash
+# bc: -l loads the math library, scale sets decimal places
+echo "scale=2; 10 / 3" | bc        # 3.33
+
+# awk: often easier, no pipe needed
+awk 'BEGIN { printf "%.2f\n", 10 / 3 }'    # 3.33
+```
+
+
+| Form        | Purpose                            | Use in                       |
+|-------------|------------------------------------|------------------------------|
+| `$(( ... ))`| **Returns a value** (expansion)    | `x=$((a + b))`, `echo $((a*b))` |
+| `(( ... ))` | **Runs a command** (returns exit code) | `if (( a > b ))`, `(( i++ ))` |
+
+```bash
+result=$(( 5 + 3 ))        # $(( )) — gives you the value 8
+
+if (( num1 > num2 )); then # (( ))  — used as a true/false test
+    echo "num1 is bigger"
+fi
+
+(( counter++ ))            # (( ))  — performs an action, no value needed
+```
+
+> Remember from Day 2, Section 3: inside `(( ))` you can use normal math symbols
+> (`>`, `<`, `==`) instead of the `-gt` / `-lt` / `-eq` flags that `[ ]` requires.
+
+
+A **counter** is just a number you bump up as you loop. In Python you'd write
+`counter = 1` then `counter += 1`; Bash is the same idea with slightly different
+syntax (the `++`/`+=` operators from §1).
+
+| Python              | Bash                     | Notes                          |
+|---------------------|--------------------------|--------------------------------|
+| `counter = 1`       | `counter=1`              | **no spaces** around `=`, no `$` |
+| `counter += 1`      | `(( counter += 1 ))`     | closest match                  |
+| `counter += 1`      | `(( counter++ ))`        | shorthand for +1               |
+| `counter = counter + 1` | `counter=$(( counter + 1 ))` | explicit form            |
+
+Remember: **assign** with no `$` (`counter=1`), **read** with `$`
+(`echo "$counter"`), and do the **math** inside `(( ))` or `$(( ))` — a bare
+`counter = counter + 1` doesn't do arithmetic (§3).
+
+### The counter-in-a-loop pattern (used in Day 10)
+
+```bash
+counter=1
+for arg in "$@"; do
+    echo "$counter: $arg"
+    (( counter++ ))
+done
+# ./script.sh foo bar baz  ->  1: foo / 2: bar / 3: baz
+```
+
+### ⚠️ The `(( i++ ))` + `set -e` gotcha
+
+`(( i++ ))` returns an **exit code based on the value *before* the increment**.
+So when `i` is `0`, `(( i++ ))` "returns" the old value `0` → treated as
+**false** → exit code `1`. On its own that's harmless, but under strict mode
+(`set -e`, §9) that non-zero exit can **abort the script**:
+
+```bash
+i=0
+(( i++ ))          # i becomes 1, but the command exits 1 → set -e would quit here
+```
+
+Safe forms that always return success:
+
+```bash
+(( i += 1 ))       # compound assignment — returns 0
+i=$(( i + 1 ))     # explicit — returns 0
+(( ++i ))          # PRE-increment — returns the NEW value (1 = success)
+```
+
+> Rule of thumb: quick scripts, `(( i++ ))` is fine (and everyone uses it). In
+> strict-mode production scripts, prefer `(( i += 1 ))` or `i=$(( i + 1 ))`. If
+> your counter starts at `1` (like Day 10), `(( i++ ))` is safe anyway.
+
+---
+
+---
+
+<a id="t18"></a>
+
+## 18. Regex, validation & `BASH_REMATCH`
+
+[↑ Contents](#contents)
+
+This is where the Day 3 script needs hardening. Three problems to guard against:
+
+### Problem 1: missing arguments
+
+```bash
+$ ./3_day.sh
+sum=0
+3_day.sh: line 7: num1 / num2: division by 0
+```
+Empty variables become `0` in arithmetic — so you get garbage, then a crash.
+
+### Problem 2: division by zero
+
+```bash
+$ ./3_day.sh 10 0
+3_day.sh: line 7: division by 0 (error token is "2")
+```
+Bash **cannot** divide by zero — it's a runtime error, not a warning.
+
+### Problem 3: non-numeric input is silently treated as 0 ⚠️
+
+```bash
+$ ./3_day.sh abc 5
+sum=5        # "abc" silently became 0 — no error at all!
+```
+This is the **dangerous** one: no crash, no warning, just a **wrong answer**.
+
+### The fix — validate with a regex
+
+```bash
+#!/bin/bash
+
+# 1. Check argument count
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <num1> <num2>" >&2
+    exit 1
+fi
+
+num1="$1"
+num2="$2"
+
+# 2. Check both are integers (^-? allows negatives, [0-9]+ = one or more digits)
+if ! [[ "$num1" =~ ^-?[0-9]+$ ]] || ! [[ "$num2" =~ ^-?[0-9]+$ ]]; then
+    echo "Error: both arguments must be integers" >&2
+    exit 1
+fi
+
+echo "sum=$((num1 + num2))"
+echo "diff=$((num1 - num2))"
+echo "prod=$((num1 * num2))"
+
+# 3. Guard division by zero
+if (( num2 == 0 )); then
+    echo "quot=undefined (cannot divide by zero)" >&2
+else
+    echo "quot=$((num1 / num2))"
+fi
+```
+
+That `^-?[0-9]+$` pattern is a **regex** — see Section 5 for a full breakdown.
+
+### Key takeaways
+- Bash arithmetic is **integer only** — `/` truncates, never rounds.
+- Empty or non-numeric variables silently become `0` — **always validate**.
+- Division by zero is a **fatal error** — guard it before dividing.
+- Send errors to stderr with `>&2` and `exit 1` (Day 2, Section 4).
+
+
+A **regex** (regular expression) is a pattern for describing what text should
+look like. In Bash you test a string against one using the `=~` operator inside
+double brackets:
+
+```bash
+if [[ "$num1" =~ ^-?[0-9]+$ ]]; then
+    echo "It's a valid integer"
+fi
+```
+
+> ⚠️ `=~` **only works inside `[[ ]]`** — never in single `[ ]`. This is one of
+> the main reasons to prefer `[[ ]]` in Bash (Day 2, Section 2).
+
+### Breaking down `^-?[0-9]+$` piece by piece
+
+Read it left to right as a sentence: *"from the start, an optional minus sign,
+then one or more digits, then the end — and nothing else."*
+
+| Part     | Name          | Meaning                                  |
+|----------|---------------|------------------------------------------|
+| `^`      | anchor        | **start** of the string                  |
+| `-?`     | optional char | a minus sign, **zero or one** time       |
+| `[0-9]`  | character set | **any single digit** from 0 to 9         |
+| `+`      | quantifier    | the thing before it, **one or more** times |
+| `$`      | anchor        | **end** of the string                    |
+
+So `[0-9]+` together means "one or more digits" — `[0-9]` says *what*, and `+`
+says *how many*.
+
+### Why the anchors `^` and `$` are critical
+
+Without anchors, a regex matches if the pattern appears **anywhere** inside the
+string. This is the classic beginner trap:
+
+```bash
+[[ "12abc" =~ [0-9]+ ]]        # TRUE!  ❌ matches the "12" part only
+[[ "12abc" =~ ^-?[0-9]+$ ]]    # FALSE  ✅ correct — "abc" isn't allowed
+```
+
+`^` and `$` force the pattern to describe the **entire** string, not just a
+fragment of it. **Almost always anchor your validation regexes.**
+
+### What it accepts and rejects
+
+| Input   | Matches? | Why                                     |
+|---------|----------|-----------------------------------------|
+| `42`    | ✅       | digits only                             |
+| `-42`   | ✅       | the optional `-` is used                |
+| `0`     | ✅       | one digit is enough (`+` needs ≥ 1)     |
+| `abc`   | ❌       | not digits                              |
+| `12abc` | ❌       | anchors reject trailing text            |
+| `3.14`  | ❌       | `.` isn't in `[0-9]` — **integers only**|
+| `-`     | ❌       | `+` requires at least one digit         |
+| `` (empty) | ❌    | `+` requires at least one digit         |
+| `+5`    | ❌       | only `-` is allowed, not `+`            |
+
+Note `3.14` failing is **intentional** — Bash arithmetic is integer-only
+(Section 2), so rejecting decimals is correct here.
+
+### The quantifiers you'll use most
+
+| Symbol | Meaning              | Example    | Matches            |
+|--------|----------------------|------------|--------------------|
+| `?`    | zero or **one**      | `-?`       | `""` or `-`        |
+| `+`    | **one** or more      | `[0-9]+`   | `5`, `42`, `1000`  |
+| `*`    | **zero** or more     | `[0-9]*`   | `""`, `5`, `42`    |
+| `{n}`  | exactly **n** times  | `[0-9]{3}` | `123` (not `12`)   |
+| `{n,m}`| between n and m      | `[0-9]{1,3}` | `1` to `999`     |
+
+> Careful: `+` vs `*` matters. `^[0-9]*$` would accept an **empty string**
+> (zero digits is "zero or more"), which is usually a bug in a validator.
+
+### Handy character sets
+
+| Set        | Matches                          |
+|------------|----------------------------------|
+| `[0-9]`    | any digit                        |
+| `[a-z]`    | any lowercase letter             |
+| `[A-Za-z]` | any letter, either case          |
+| `[a-zA-Z0-9_]` | letters, digits, underscore  |
+| `[^0-9]`   | **NOT** a digit (`^` inside `[]` = negate) |
+| `.`        | **any** single character         |
+
+> Confusing but important: `^` means "start of string" *outside* brackets, but
+> means "**not**" *inside* brackets. `[^0-9]` = "any non-digit".
+
+### Useful variations
+
+```bash
+# Positive integers only (no minus sign)
+[[ "$n" =~ ^[0-9]+$ ]]
+
+# Allow decimals: optional minus, digits, optional (dot + digits)
+[[ "$n" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]     # \. is a literal dot
+
+# Don't quote the regex! Quoting makes it a literal string, not a pattern
+[[ "$n" =~ "^[0-9]+$" ]]    # ❌ WRONG — looks for that exact text
+[[ "$n" =~ ^[0-9]+$ ]]      # ✅ RIGHT
+```
+
+That last one is a **big gotcha**: quoting the *variable* (`"$n"`) is required,
+but quoting the *regex* breaks it — the quotes turn the pattern into literal
+text to search for.
+
+### Capturing parts with `BASH_REMATCH`
+
+When a regex matches, Bash stores the pieces in the `BASH_REMATCH` array — index
+`0` is the whole match, and each `( )` group gets the next index:
+
+```bash
+date_str="2026-07-17"
+if [[ "$date_str" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]]; then
+    echo "Full:  ${BASH_REMATCH[0]}"   # 2026-07-17
+    echo "Year:  ${BASH_REMATCH[1]}"   # 2026
+    echo "Month: ${BASH_REMATCH[2]}"   # 07
+    echo "Day:   ${BASH_REMATCH[3]}"   # 17
+fi
+```
+
+You'll need this for Day 32 (validating an IPv4 address).
+
+### Key takeaways
+- `=~` works **only** inside `[[ ]]`.
+- **Anchor with `^` and `$`** or you'll match fragments (`12abc` passing as a number).
+- Quote the **variable**, never the **regex**.
+- `?` = 0-or-1, `+` = 1-or-more, `*` = 0-or-more. Prefer `+` in validators.
+- `^` outside brackets = "start"; `^` inside `[ ]` = "not".
+- `( )` groups are captured into `${BASH_REMATCH[n]}`.
+
+
+This is the full integer-check block from the Day 3 script. It pulls together
+almost everything above, so let's read it **one line at a time**.
+
+```bash
+# Check both are integers
+if ! [[ "$num1" =~ ^-?[0-9]+$ ]] || ! [[ "$num2" =~ ^-?[0-9]+$ ]]; then
+    echo "Error: both arguments must be integers" >&2
+    exit 1
+fi
+```
+
+### Line 1 — the condition
+
+```bash
+if ! [[ "$num1" =~ ^-?[0-9]+$ ]] || ! [[ "$num2" =~ ^-?[0-9]+$ ]]; then
+```
+
+Read it in seven small pieces:
+
+| Piece                    | Meaning                                                    |
+|--------------------------|------------------------------------------------------------|
+| `if`                     | start a conditional — run the body only if it's true       |
+| `[[ ... ]]`              | Bash's advanced test (supports regex — §13)           |
+| `"$num1"`                | the first argument, e.g. `25` (quoted so spaces are safe)  |
+| `=~`                     | "matches the regular expression on the right"              |
+| `^-?[0-9]+$`             | the regex: start, optional `-`, one+ digits, end (§5)      |
+| `!`                      | **NOT** — flips the result                                 |
+| <code>&#124;&#124;</code>| **OR** — true if either side is true                       |
+
+Building it up:
+- `[[ "$num1" =~ ^-?[0-9]+$ ]]` → true when `num1` **is** an integer.
+- `! [[ ... ]]` → true when `num1` is **NOT** an integer.
+- `A || B` → enter the `if` when `num1` is not an integer **OR** `num2` is not an
+  integer.
+
+**Plain English:** "If *either* argument is not a valid integer, run the error
+handling below."
+
+Truth-table for the `||`:
+
+| num1 valid? | num2 valid? | `!A` | `!B` | `!A ‖ !B` | Enters `if`? |
+|-------------|-------------|------|------|-----------|--------------|
+| yes         | yes         | F    | F    | **F**     | no → do math |
+| yes         | no          | F    | T    | **T**     | yes → error  |
+| no          | yes         | T    | F    | **T**     | yes → error  |
+| no          | no          | T    | T    | **T**     | yes → error  |
+
+### Line 2 — the error message
+
+```bash
+echo "Error: both arguments must be integers" >&2
+```
+
+`echo` prints the text; `>&2` sends it to **stderr** instead of stdout. (Full
+explanation in §25.) The short version:
+
+| Stream | Number | Carries          |
+|--------|--------|------------------|
+| stdout | `1`    | normal results   |
+| stderr | `2`    | errors, warnings |
+
+`>&2` = "redirect this output to file descriptor **2** (stderr)." So error text
+stays out of a file/pipe that's capturing the real results.
+
+**Proof it works** — capture stdout to a file, errors to another:
+
+```bash
+$ ./3_day.sh 25 hello > out.txt 2> err.txt
+$ cat out.txt        # (empty — no real result was produced)
+$ cat err.txt
+Error: both arguments must be integers
+```
+
+The error landed in `err.txt`, **not** `out.txt` — exactly because of `>&2`.
+
+### Line 3 — stop with a failure code
+
+```bash
+exit 1
+```
+
+Stops the script **immediately** and reports failure to the OS. By convention:
+
+| Exit code    | Meaning              |
+|--------------|----------------------|
+| `0`          | success              |
+| non-zero (`1`…) | failure / error   |
+
+This is what lets another script do `if ./3_day.sh 25 10; then ...` — it reads
+this exit code. (Ties back to Day 1: a subshell reports its result via the exit
+code.)
+
+### Line 4 — close the block
+
+```bash
+fi
+```
+
+`fi` (`if` reversed) marks the end of the `if`. If the condition was false, Bash
+skips straight past `fi` and continues to the arithmetic below.
+
+### Full flow with a real example
+
+`./3_day.sh 25 hello`  (so `num1=25`, `num2=hello`):
+
+1. `[[ "25" =~ ^-?[0-9]+$ ]]` → true → `! ` makes it **false**.
+2. `[[ "hello" =~ ^-?[0-9]+$ ]]` → false → `! ` makes it **true**.
+3. `false || true` → **true**, so enter the `if`.
+4. Print `Error: both arguments must be integers` to **stderr**.
+5. `exit 1` — script stops, failure code returned.
+
+Contrast `./3_day.sh -15 42` (both valid):
+
+1. `! [[ "-15" =~ ... ]]` → false (the `-?` allows the minus).
+2. `! [[ "42"  =~ ... ]]` → false.
+3. `false || false` → **false**, so **skip** the `if` and go do the math.
+
+> ✅ All of the above is verified against real Bash: `25 10` and `-15 42` pass;
+> `25 hello`, `10.5 3`, and `abc xyz` each print the error and exit `1`.
+
+
+> Day 32 validates an IPv4 address. The new technique is **capturing parts of a
+> match** with `( )` groups and reading them back from the **`BASH_REMATCH`** array
+> — a big step up from the plain `=~` matching in §18.
+
+### Why a regex alone can't do it
+
+A regex is great at checking **shape**, but weak at checking **numeric range**.
+An IPv4 like `999.999.999.999` has the right *shape* (four dot-separated numbers)
+but is invalid (each part must be 0–255). A pure regex that also enforces ≤ 255
+is possible but horrible to read.
+
+So the clean approach is **two steps**:
+1. **Regex** → check the structure *and* **capture** the four octets.
+2. **Arithmetic** → check each captured octet is 0–255.
+
+> "Regex for the shape, code for the value" — a pattern you'll reuse for dates,
+> versions, ports, anything that's "formatted text with numeric rules."
+
+### Capture groups `( )` and `BASH_REMATCH`
+
+Parentheses `( )` in a regex **capture** the text they match so you can use it
+afterwards. After a successful `[[ str =~ regex ]]`, bash fills a special array
+called **`BASH_REMATCH`**:
+
+| Element | Holds |
+|---------|-------|
+| `BASH_REMATCH[0]` | the **whole** matched string |
+| `BASH_REMATCH[1]` | the text of the **1st** `( )` group |
+| `BASH_REMATCH[2]` | the **2nd** group … and so on |
+
+```bash
+ip="192.168.1.1"
+[[ $ip =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]
+# BASH_REMATCH[0] = 192.168.1.1   (whole match)
+# BASH_REMATCH[1] = 192           BASH_REMATCH[2] = 168
+# BASH_REMATCH[3] = 1             BASH_REMATCH[4] = 1
+```
+> Verified: `${#BASH_REMATCH[@]}` = 5 (the whole match **plus** 4 groups). The
+> array is refilled on every `=~`, so read it right after the match.
+
+### The IPv4 regex, broken down
+
+```
+^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$
+```
+
+| Part            | Meaning |
+|-----------------|---------|
+| `^` … `$`       | anchor to the **whole** string (no partial matches, no trailing spaces) |
+| `([0-9]{1,3})`  | **1 to 3 digits**, captured as an octet |
+| `\.`            | a **literal dot** — `.` alone means "any char", so escape it |
+| four groups     | four octets separated by three dots |
+
+- `{1,3}` = "between 1 and 3 of the previous" (§18 quantifiers).
+- The **anchors matter**: without `^...$`, `"1.2.3.4 "` (trailing space) or
+  `"x1.2.3.4"` could sneak through. Verified: the anchored version rejects them.
+- **Don't quote the regex** inside `[[ =~ ]]` (§18) — quoting makes it a
+  literal string.
+
+### Looping the octets: array slice + `10#`
+
+```bash
+for octet in "${BASH_REMATCH[@]:1:4}"; do
+    if (( 10#$octet > 255 )); then ... ; fi
+done
+```
+
+**`"${BASH_REMATCH[@]:1:4}"`** — array **slicing**: `[@]:start:count` takes
+`count` elements beginning at index `start`. So `:1:4` = indices 1,2,3,4 — the
+four octets, skipping index 0 (the whole match). Verified → `192 168 1 1`.
+
+**`10#$octet`** — forces **base 10**. In `(( ))`, a number with a leading zero is
+read as **octal**: `010` = 8, and `08` throws `value too great for base`. An octet
+like `192.168.01.1` would break the check. `10#$octet` says "interpret this as
+decimal," sidestepping the octal trap (same trap as Day 29). Verified:
+`(( 08 > 255 ))` errors, but `(( 10#08 > 255 ))` is a clean `0`.
+
+### The full Day 32 solution
+
+```bash
+#!/bin/bash
+
+ip=$1
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <ip-address>" >&2
+    exit 1
+fi
+
+# 1. Match the STRUCTURE and CAPTURE the four octets
+if [[ ! $ip =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+    echo "INVALID: '$ip' (wrong format)"
+    exit 1
+fi
+
+# 2. Check each captured octet is 0-255
+for octet in "${BASH_REMATCH[@]:1:4}"; do
+    if (( 10#$octet > 255 )); then
+        echo "INVALID: '$ip' (octet $octet > 255)"
+        exit 1
+    fi
+done
+
+echo "VALID: '$ip'"
+exit 0
+```
+> Verified: accepts `192.168.1.1`, `0.0.0.0`, `255.255.255.255`; rejects
+> `256.1.1.1` (octet check), `999.999.999.999`, `1.2.3`, `1.2.3.4.5`, `abc`, and
+> `"1.2.3.4 "` (trailing space).
+
+#### Key takeaways
+- `( )` in a regex **captures**; after `=~`, read groups from `BASH_REMATCH[1]`,
+  `[2]`, … (`[0]` = whole match).
+- **Regex checks shape, code checks value** — regex can't cleanly enforce ≤ 255.
+- `"${BASH_REMATCH[@]:1:4}"` slices the 4 octets out of the array.
+- Anchor with `^...$`; escape literal dots `\.`; don't quote the regex.
+- `10#$n` forces base-10 so leading-zero octets don't trigger the octal trap.
+
+---
+
+---
+
+<a id="t19"></a>
+
+## 19. Loops — `for`, `while`, `until`
+
+[↑ Contents](#contents)
+
+Three loop shapes. You'll use `for` most.
+
+#### `for` — loop over a list of things
+
+```bash
+for i in 1 2 3; do echo "$i"; done          # explicit list
+for i in {1..10}; do echo "$i"; done         # brace RANGE -> 1..10
+for i in $(seq 1 10); do echo "$i"; done      # seq does the same
+for f in *.log; do echo "$f"; done            # a GLOB (each matching file)
+for arg in "$@"; do echo "$arg"; done         # the script's arguments (Day 10)
+```
+
+- `{1..10}` is **brace expansion** (the Quick reference) — also `{1..10..2}` (step 2),
+  `{a..e}`. It must be *literal* — `{1..$n}` does **not** work (use `seq` then).
+- **C-style `for`** (like Python/C), great when you need arithmetic control:
+  ```bash
+  for (( i=1; i<=10; i++ )); do echo "$i"; done
+  ```
+
+#### `while` — loop *while* a condition is true
+
+```bash
+i=1
+while (( i <= 10 )); do
+    echo "$i"
+    (( i++ ))              # remember the ++ gotcha (§17)
+done
+```
+
+`while` is also how you read a file line by line (Section 8) and how you build
+retry loops (see **Retry loops** below).
+
+#### `until` — loop *until* a condition becomes true (rarely used)
+
+```bash
+until (( i > 10 )); do echo "$i"; (( i++ )); done   # opposite of while
+```
+
+#### Loop control
+
+| Keyword    | Effect                                  |
+|------------|-----------------------------------------|
+| `break`    | exit the loop immediately               |
+| `continue` | skip to the next iteration              |
+| `break 2`  | break out of **2** nested loops         |
+
+> ⚠️ **The no-match glob trap (Day 17):** `for f in *.log` — if there are **no**
+> `.log` files, bash leaves the pattern **literal**, so `f` becomes the string
+> `*.log`. Always guard: `[[ -e "$f" ]] || continue` inside the loop, or set
+> `shopt -s nullglob` so a no-match expands to nothing.
+
+#### Retry loops — try a command until it succeeds (Day 29)
+
+A **retry loop** runs a command that might fail *temporarily* and tries again a
+few times before giving up — waiting for a service to start, tolerating a network
+blip, polling until a resource is ready. It's just a counted loop plus "run the
+command, stop on success, pause between tries."
+
+| Part | Code | Purpose |
+|------|------|---------|
+| the loop | `for attempt in $(seq 1 "$N")` | try at most N times |
+| the attempt | `if "$@"; then …` | run the command; **exit 0 = success** |
+| success | `exit 0` (or `break`) | stop the moment it works |
+| the pause | `sleep 2` | wait between attempts |
+| give-up | `exit 1` after the loop | all N attempts failed |
+
+The heart is **using the command's exit code as the condition** (like `id` in
+Day 9, or a function in §2): `if "$@"` succeeds when the command returns 0.
+
+Make it retry **any** command by taking the count as `$1`, `shift`-ing it off, and
+letting `"$@"` be the command + its args:
+
+```bash
+#!/bin/bash
+# Retry a command up to N times, 2s apart, stop on first success.
+
+# 1. Need an attempt count AND a command
+if [[ $# -lt 2 ]]; then
+    echo "Usage: $0 <max-attempts> <command...>" >&2
+    exit 1
+fi
+
+max_attempts=$1
+shift                          # "$@" is now the command + its args
+
+# 2. Validate the count (≥1, no leading zeros)
+if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: max-attempts must be a positive integer" >&2
+    exit 1
+fi
+
+# 3. The retry loop
+for attempt in $(seq 1 "$max_attempts"); do
+    if "$@"; then                                   # exit 0 = success
+        echo "Succeeded on attempt $attempt"
+        exit 0
+    fi
+    echo "Attempt $attempt/$max_attempts failed" >&2
+    if (( attempt < max_attempts )); then           # don't sleep after the last try
+        sleep 2
+    fi
+done
+
+echo "All $max_attempts attempts failed" >&2
+exit 1
+```
+
+```bash
+./retry.sh 5 curl -sf http://localhost:8080/health   # wait for a service to come up
+./retry.sh 3 kubectl get pods -n prod                 # tolerate a flaky API call
+```
+> Verified: succeeds mid-way (exit 0), exhausts all tries (exit 1), and rejects
+> bad input — all with correct exit codes.
+
+**Polish & pitfalls:**
+- **Don't sleep after the last attempt** — guard with `if (( attempt < max_attempts ))`;
+  otherwise you waste the final pause.
+- **Return the right exit code** — `exit 0` on success, `exit 1` if exhausted, so a
+  caller can react.
+- **Validate N as a positive integer** — `^[1-9][0-9]*$` (≥1, no leading zeros). `0`
+  retries is meaningless, and leading zeros trigger the octal trap in `(( ))`
+  (`010` = 8, `08` = error).
+- **Quote `"$@"`** so a command with spaced args survives (Day 10).
+- **Next level:** production retries use **exponential backoff** — 1s, 2s, 4s, 8s…
+  with a little random jitter — instead of a flat pause. That's Day 51.
+
+---
+
+<a id="t20"></a>
+
+## 20. Functions
+
+[↑ Contents](#contents)
+
+A **function** is a **named block of commands** you run over and over by name — how
+you stop repeating yourself and build reusable, readable scripts. Every serious
+script from here uses them. **This section is the complete functions reference.**
+
+#### Why use one
+
+```bash
+greet() {
+    echo "Hello there!"
+}
+
+greet        # run it — prints "Hello there!"
+greet        # run it again
+```
+
+- **Don't Repeat Yourself** — write logic once, call it many times.
+- **Readability** — `if is_valid_ip "$x"` reads like English vs a wall of regex.
+- **Testable & composable** — small functions combine into bigger scripts (Day 58's
+  `lib.sh`, Day 60's orchestrator).
+
+#### Defining & calling functions
+
+Two syntaxes — **identical** in behaviour; the first is preferred:
+
+```bash
+name() {          # ← preferred (POSIX)
+    commands
+}
+
+function name {   # ← older bash-only style, same result
+    commands
+}
+```
+
+**Calling** is just the name, like any command — **no parentheses, args separated
+by spaces**:
+
+```bash
+greet Mahima          # ✅ correct
+greet("Mahima")       # ❌ this is NOT how bash calls functions
+```
+
+> ⚠️ A function must be **defined before it's called** — bash reads top to bottom.
+> Put functions near the top, "main" logic below them.
+
+#### Arguments inside a function
+
+A function gets its **own** positional parameters — the same `$1`, `$2`, `$@`, `$#`
+rules as a script (Day 2), but scoped to the **function's** call:
+
+```bash
+add() {
+    echo "got $# args: $@"
+    echo $(( $1 + $2 ))
+}
+add 3 4          # got 2 args: 3 4  /  7
+```
+
+| Inside a function | Means |
+|-------------------|-------|
+| `$1`, `$2`, …     | the function's 1st, 2nd, … argument |
+| `$@`              | all the function's args (each quoted separately) |
+| `$#`              | how many args the function got |
+| `$0`              | still the **script** name (not the function) |
+| `${FUNCNAME[0]}`  | the current function's **name** |
+
+**`shift`** drops `$1` and slides everything down (`$2`→`$1`, …) — great when the
+first arg is special and the rest is "everything else" (Day 20's `log`):
+
+```bash
+log() {
+    local level="$1"      # first arg = level
+    shift                  # drop it
+    echo "[$level] $*"     # $* = the remaining words (the message)
+}
+log INFO "server started"   # [INFO] server started
+```
+
+#### The TWO ways a function "returns" (the big one)
+
+The #1 thing beginners get wrong. Bash functions return in **two different ways**,
+depending on whether you want a **status** or a **value**:
+
+| You want to return… | Use              | Caller reads it with     |
+|---------------------|------------------|--------------------------|
+| success / failure (yes-no) | `return N` (exit code) | `if myfunc; then` |
+| a **value** (string/number) | `echo` the value | `x=$(myfunc)` (capture)  |
+
+**Way 1 — `return` = an exit code (status only):**
+
+```bash
+is_even() {
+    if (( $1 % 2 == 0 )); then
+        return 0        # 0 = success = "true"
+    else
+        return 1        # non-zero = failure = "false"
+    fi
+}
+
+if is_even 4; then echo "even"; fi     # uses the exit code as the condition
+```
+
+> ⚠️ **`return` can ONLY hold a number 0–255** (it's an exit **code**, not a value).
+> Bigger numbers **wrap around** — verified: `return 256`→`0`, `return 300`→`44`,
+> `return -1`→`255`. So you can **never** use `return` to hand back real data.
+
+**Way 2 — `echo` + capture = a value:**
+
+```bash
+double() {
+    echo $(( $1 * 2 ))      # "return" the value by printing it
+}
+
+result=$(double 7)          # capture -> 14
+```
+
+> Key mental model: `return` answers **"did it work?"**; `echo`+`$()` answers
+> **"what's the value?"**. Mixing them up is the classic bug — e.g. writing
+> `return $(( $1 * 2 ))` for a big number silently wraps past 255.
+
+#### Variable scope: `local` vs global
+
+By default **all** variables in bash are **global** — a variable set inside a
+function leaks out and can clobber the rest of your script:
+
+```bash
+name="global"
+leaky()  { name="LEAKED"; }        # no 'local' → overwrites the global!
+leaky;   echo "$name"               # LEAKED   ⚠️
+
+safe()   { local name="inside"; }   # 'local' → confined to the function
+safe;    echo "$name"               # still "global"  ✅
+```
+
+> **Always declare a function's own variables `local`** so a helper doesn't
+> silently change a variable the caller was using (a real senior-level habit).
+
+#### Worked example: `is_even` (Day 19)
+
+Task: a function `is_even` returning success/failure via exit code, used over 1–20.
+
+```bash
+#!/bin/bash
+
+is_even() {
+    (( $1 % 2 == 0 ))       # (( )) sets the exit code: 0 if even, 1 if odd
+}
+
+for i in {1..20}; do
+    if is_even "$i"; then
+        echo "$i is even"
+    fi
+done
+```
+
+Two equivalent forms of the function:
+```bash
+is_even() { (( $1 % 2 == 0 )); }          # concise — relies on (( )) exit code
+
+is_even() {                                # explicit — spells out return
+    if (( $1 % 2 == 0 )); then return 0; else return 1; fi
+}
+```
+Both work because `(( ))` already sets its exit status from the result (§17).
+The function plugs straight into `if is_even "$i"` — the function **is** the
+condition (same command-exit-status idea as `id` in Day 9).
+
+#### Gotchas, best practices & the `main` pattern
+
+- **Define before you call** — functions must appear above their first use.
+- **`local` your variables** — or they leak into the global scope.
+- **`return` is 0–255 only** — for data, `echo` + `$()`. Don't `return` a computed
+  value that might exceed 255.
+- **Quote the args** — `myfunc "$var"`, and inside use `"$1"`, `"$@"` (Day 10).
+- **One job per function** — small, named, testable. Compose them.
+- For bigger scripts: helper functions up top, then a `main()`, then a single
+  `main "$@"` at the bottom (Day 56):
+
+```bash
+main() {
+    log INFO "starting"
+    # top-level logic here
+}
+main "$@"        # pass the script's args into main
+```
+
+#### Functions — key takeaways
+- Define with `name() { ... }`; call with just `name arg1 arg2` (no parens).
+- Inside, `$1`/`$@`/`$#` are the **function's** args; `shift` consumes from the front.
+- **Return status** with `return` (0–255 exit code) → use in `if`.
+- **Return data** with `echo` → capture with `$( )`.
+- Always `local` a function's variables to avoid leaks.
+
+---
+
+<a id="t21"></a>
+
+## 21. Arrays (indexed & associative)
+
+[↑ Contents](#contents)
+
+A variable holds one value; an **array** holds many.
+
+**Indexed arrays** (numbered from 0):
+```bash
+fruits=(apple banana cherry)     # create
+echo "${fruits[0]}"              # apple           (one element)
+echo "${fruits[@]}"              # all elements
+echo "${#fruits[@]}"            # 3               (count)
+fruits+=(date)                   # append
+for f in "${fruits[@]}"; do echo "$f"; done   # loop (quote it!)
+```
+> **Always `"${arr[@]}"` with quotes** to keep elements with spaces intact
+> (same rule as `"$@"`, Day 10). Verified: create, index, count, append all work.
+
+**Associative arrays** (string keys — like a Python dict / map):
+```bash
+declare -A color                 # MUST declare with -A first
+color[apple]=red
+color[sky]=blue
+echo "${color[apple]}"          # red
+for k in "${!color[@]}"; do      # ${!color[@]} = the KEYS
+    echo "$k -> ${color[$k]}"
+done
+```
+> ⚠️ Associative arrays need **bash 4+** (standard on Linux servers). They're the
+> tool for Day 53 (counting HTTP status codes) — the same "count by key" idea as
+> awk's `arr[$k]++` (§31).
+
+---
+
+<a id="t22"></a>
+
+## 22. Parameter expansion (string surgery)
+
+[↑ Contents](#contents)
+
+Bash can slice and reshape strings **itself** — no `basename`, `dirname`, `cut`,
+or `sed` subprocess needed. Faster, safer, and it's the whole point of Day 27.
+
+### The trim operators — `#` `##` `%` `%%`
+
+These **remove a matching piece** from one end of the string. The two things to
+remember:
+
+| Operator | Direction | Amount |
+|----------|-----------|--------|
+| `${var#pattern}`  | cut from the **front** | **shortest** match |
+| `${var##pattern}` | cut from the **front** | **longest** match (greedy) |
+| `${var%pattern}`  | cut from the **back**  | **shortest** match |
+| `${var%%pattern}` | cut from the **back**  | **longest** match (greedy) |
+
+> **Memory trick:** `#` is **left** of `$` on the keyboard → cuts the **left/front**.
+> `%` is **right** of `$` → cuts the **right/back**. **Doubled = greedy** (longest).
+
+The `pattern` uses globs (`*`, `?`, `[...]`), not regex. `*` = "any run of chars."
+
+#### Single vs double — why it matters
+
+For `p="/var/log/nginx/access.log"`:
+
+```bash
+${p#*/}    # var/log/nginx/access.log   (shortest: removes just the first "/")
+${p##*/}   # access.log                 (longest: removes up to the LAST "/")
+```
+Both cut from the front with pattern `*/`, but `#` stops at the *first* slash while
+`##` eats *all* the way to the last. To pull a filename out of a path you want the
+**greedy `##`**. Verified.
+
+### The four path pieces (Day 27, worked out)
+
+Given `path="/var/log/nginx/access.log"` — do it in **two steps**: path → filename,
+then filename → name/extension:
+
+| Goal | Expansion | Result | How |
+|------|-----------|--------|-----|
+| **directory** | `${path%/*}`   | `/var/log/nginx` | cut shortest `/*` off the **back** |
+| **filename**  | `${path##*/}`  | `access.log`     | cut longest `*/` off the **front** |
+| **name** (no ext) | `${file%.*}`  | `access`     | cut shortest `.*` off the **back** |
+| **extension** | `${file##*.}`  | `log`            | cut longest `*.` off the **front** |
+
+```bash
+path="/var/log/nginx/access.log"
+dir="${path%/*}"          # /var/log/nginx
+file="${path##*/}"        # access.log
+name="${file%.*}"         # access
+ext="${file##*.}"         # log
+```
+
+> ⚠️ **Edge case (interview bonus):** a file with **no extension** (`/etc/hostname`).
+> Then `${file%.*}` and `${file##*.}` both just return the whole filename (there's
+> no `.` to cut) — so `name` and `ext` would both be `hostname`. Know this behavior.
+
+### Length & substrings
+
+```bash
+${#var}         # LENGTH (character count): ${#path} -> 25
+${var:offset}          # substring FROM offset:  ${path:5}    -> log/nginx/access.log
+${var:offset:length}   # substring of length:    ${path:0:4}  -> /var
+```
+Verified all three.
+
+### Defaults & fallbacks — handle unset variables
+
+| Expansion         | Meaning                                          |
+|-------------------|--------------------------------------------------|
+| `${var:-default}` | use **default** if `var` is unset/empty (var unchanged) |
+| `${var:=default}` | use **and assign** default if unset/empty        |
+| `${var:?message}` | **error out** with message if unset/empty        |
+| `${var:+alt}`     | use **alt** only if `var` **is** set              |
+
+```bash
+port="${PORT:-8080}"          # PORT if set, else 8080 (very common in scripts)
+: "${CONFIG:?must set CONFIG}"  # abort with an error if CONFIG isn't set
+```
+> `${VAR:-x}` is the idiomatic way to give a config value a default. Verified:
+> unset → `DEF`; set → the real value.
+
+### Search & replace (no `sed` needed)
+
+| Expansion          | Effect                              |
+|--------------------|-------------------------------------|
+| `${var/old/new}`   | replace the **first** `old`         |
+| `${var//old/new}`  | replace **all** `old` (global)      |
+| `${var/#old/new}`  | replace only if `old` is at the **start** |
+| `${var/%old/new}`  | replace only if `old` is at the **end**   |
+
+```bash
+${p/log/LOG}     # /var/LOG/nginx/access.log   (first only)
+${p//log/LOG}    # /var/LOG/nginx/access.LOG   (all)
+```
+Verified both.
+
+### Case conversion (bash 4+)
+
+```bash
+${var^}    # Capitalize first char        ${var^^}   # UPPERCASE all
+${var,}    # lowercase first char         ${var,,}   # lowercase all
+```
+> Standard on Linux (bash 4+). e.g. `name="${name,,}"` to normalise input to
+> lowercase. (Not available in ancient bash 3.x.)
+
+#### Key takeaways
+- **`#`/`##` cut the front, `%`/`%%` cut the back; doubled = greedy (longest).**
+- Path pieces: dir `${p%/*}`, file `${p##*/}`, name `${f%.*}`, ext `${f##*.}`.
+- `${#var}` = length; `${var:o:l}` = substring.
+- `${var:-default}` gives a fallback; `${var:?msg}` fails fast if unset.
+- `${var//old/new}` replaces all; `${var,,}`/`${var^^}` change case (bash 4+).
+- All of this replaces `basename`/`dirname`/`cut`/`sed` — no subprocess, instant.
+
+
+### Section 4 — String length with `${#var}`
+
+`${#var}` gives the **number of characters** in a variable:
+
+```bash
+s="hello"
+echo "${#s}"          # 5
+echo "${#EMPTY}"      # 0  (unset or empty -> 0)
+```
+
+| Expansion       | Gives you                                  |
+|-----------------|--------------------------------------------|
+| `${#var}`       | length of the string (character count)     |
+| `${#1}`         | length of the **1st argument**             |
+| `${#arr[@]}`    | number of **elements** in an array         |
+| `${#line}`      | length of the current line (Day 21's core) |
+
+- Verified: `${#s}`=5, `${#EMPTY}`=0, `${#arr[@]}`=4.
+- Counts **characters**, not bytes — in a UTF-8 locale a 3-byte emoji counts as 1.
+- It's **parameter expansion** (primer §9), so it's instant — no `wc -c` subprocess.
+
+Then a length test is just arithmetic (§15):
+```bash
+if (( ${#line} > 80 )); then ...      # lines longer than 80 chars
+```
+
+---
+
+<a id="t23"></a>
+
+## 23. `getopts` — proper flag parsing
+
+[↑ Contents](#contents)
+
+For real CLI flags (`-e prod -v -h`), **don't hand-parse `$1`/`$2`** — bash has a
+built-in for it: **`getopts`**. It handles flags in any order, bundled flags
+(`-ve`), flags-with-values, and errors — all the stuff you'd otherwise write by
+hand. This is a **senior-level must-know**.
+
+### The anatomy
+
+```bash
+while getopts ":e:vh" opt; do
+    case "$opt" in
+        e) ... "$OPTARG" ... ;;
+        v) ... ;;
+        h) ... ;;
+    esac
+done
+shift $((OPTIND - 1))
+```
+
+- **`getopts OPTSTRING var`** parses **one** option per call and stores its letter
+  in `var` (here `opt`). The `while` loops until options run out.
+- Run it in a `while … case` — one `case` branch per flag.
+
+### The OPTSTRING — the spec for your flags
+
+The string `":e:vh"` describes the allowed flags:
+
+| In the optstring | Meaning |
+|------------------|---------|
+| a letter (`v`, `h`) | a **flag** that takes no argument |
+| a letter **followed by `:`** (`e:`) | a flag that **requires an argument** |
+| a **leading `:`** (`":e:vh"`) | **silent error mode** — *you* handle bad input (see below) |
+
+So `":e:vh"` = "`-e` needs a value; `-v` and `-h` are bare flags; and I'll handle
+my own errors."
+
+### The magic variables
+
+| Variable   | Holds |
+|------------|-------|
+| `$OPTARG`  | the **value** given to a flag that takes one (`-e prod` → `OPTARG=prod`) |
+| `$OPTIND`  | index of the **next** argument to process |
+
+**`shift $((OPTIND - 1))`** at the end drops all the parsed options, leaving only
+the **positional arguments** in `"$@"`. (Verified: after `-e prod -v`, `OPTIND`
+was 6, so trailing args survive the shift.)
+
+### Error handling — the leading colon
+
+**With** a leading `:` in the optstring (silent mode), `getopts` sets `opt` to a
+special value and you handle it — cleaner, and you control the message:
+
+```bash
+while getopts ":e:vh" opt; do
+    case "$opt" in
+        e)  env="$OPTARG" ;;
+        v)  verbose=1 ;;
+        h)  usage; exit 0 ;;
+        :)  echo "Error: -$OPTARG requires an argument" >&2; exit 1 ;;   # missing value
+        \?) echo "Error: unknown option -$OPTARG" >&2; exit 1 ;;          # unknown flag
+    esac
+done
+```
+- **`:)`** fires when a required argument is **missing** (`-e` with nothing after);
+  `$OPTARG` holds the option letter.
+- **`\?)`** fires on an **unknown** option (`-x`). (`?` is escaped — it's a glob char.)
+
+> **Without** the leading colon, `getopts` prints its **own** message (e.g.
+> `illegal option -- x`) — fine for quick scripts, but the silent-mode form above
+> gives you clean stderr messages and exit codes. Both verified.
+
+### The full Day 35 solution
+
+```bash
+#!/bin/bash
+
+usage() {
+    cat <<USAGE
+Usage: $0 [-e <env>] [-v] [-h]
+  -e <env>   target environment (dev|staging|prod)
+  -v         verbose output
+  -h         show this help
+USAGE
+}
+
+env=""
+verbose=0
+
+while getopts ":e:vh" opt; do
+    case "$opt" in
+        e)  env="$OPTARG" ;;
+        v)  verbose=1 ;;
+        h)  usage; exit 0 ;;
+        :)  echo "Error: -$OPTARG requires an argument" >&2; usage; exit 1 ;;
+        \?) echo "Error: unknown option -$OPTARG" >&2; usage; exit 1 ;;
+    esac
+done
+shift $((OPTIND - 1))          # "$@" now holds only positional args
+
+(( verbose )) && echo "[verbose on]"
+if [[ -n "$env" ]]; then
+    echo "Target environment: $env"
+else
+    echo "No environment set (use -e)"
+fi
+(( $# )) && echo "Leftover args: $*"
+```
+> Verified: `-e prod -v` and `-v -e staging` both work (order-independent);
+> `-ve prod` bundles two flags; `-e` (no value) and `-x` (unknown) error cleanly;
+> `-h` prints usage; positional args after the flags survive the `shift`.
+
+### What getopts gives you for free
+- **Order-independent** flags (`-e prod -v` = `-v -e prod`).
+- **Bundling** — `-ve prod` = `-v` + `-e prod`.
+- **Clean errors** — missing values and unknown flags caught.
+- **Positional args preserved** after `shift $((OPTIND-1))`.
+
+> ⚠️ **Limitation:** `getopts` handles **short** options only (`-e`), **not** GNU
+> long options (`--env`). For `--long` flags you'd use a manual `while`/`case` loop
+> or the external `getopt` (different tool). For most scripts, short flags are fine.
+
+#### Key takeaways
+- `while getopts ":e:vh" opt; do case "$opt" in … esac; done` — one branch per flag.
+- **`x:`** = flag `-x` needs a value (in `$OPTARG`); **leading `:`** = silent mode.
+- Handle **`:)`** (missing arg) and **`\?)`** (unknown flag) yourself in silent mode.
+- End with **`shift $((OPTIND-1))`** to leave positional args in `"$@"`.
+- Short flags only; use it instead of hand-parsing `$1`/`$2`.
+
+---
+
+# Part III — Input & output
+
+> Streams, redirection, and getting data in and out of a script.
+
+<a id="t24"></a>
+
+## 24. Redirection & file descriptors — the complete guide
+
+[↑ Contents](#contents)
+
+**Your one-stop reference for everything redirection.** This gathers the pieces
+scattered across §24, §25/§5/§6/§7 and adds the three tools Tier 3
+needs: **`tee`**, **`exec`**, and **process substitution**. If you only read one
+section on redirection, read this one.
+
+### 1. The mental model — three hoses
+
+Every command has three streams attached to it. They're numbered, and those
+numbers are called **file descriptors** (FDs):
+
+| FD | Name   | Default location | Carries                     |
+|----|--------|------------------|-----------------------------|
+| 0  | stdin  | keyboard         | input coming **in**         |
+| 1  | stdout | screen           | **normal results**          |
+| 2  | stderr | screen           | **errors / warnings / logs**|
+
+Because stdout and stderr *both* point at your screen by default, they look like
+one stream — but they're two, and you can aim each one somewhere different. That
+single fact explains every operator below.
+
+> **Why two output streams?** So that `kubectl get pods | grep Running` pipes
+> only real **data**, while error messages go around the pipe to your screen.
+> Diagnostics never contaminate the data flow.
+
+### 2. The one rule that unlocks every operator
+
+> **Without `&`, the target is a _filename_. With `&`, the target is a
+> _file-descriptor number_.**
+
+- `2> file` → errors into a file literally named `file`
+- `2>&1`    → errors to **wherever FD 1 is pointing right now**
+
+Read `N>&M` as **"point stream N at stream M's current destination."**
+
+### 3. The complete operator table
+
+| Syntax        | Long form | Meaning                                   |
+|---------------|-----------|-------------------------------------------|
+| `> file`      | `1> file` | stdout → file (**overwrite**)             |
+| `>> file`     | `1>>file` | stdout → file (**append**)                |
+| `2> file`     |           | stderr → file (overwrite)                 |
+| `2>> file`    |           | stderr → file (append)                    |
+| `&> file`     | `>file 2>&1` | **both** streams → file (overwrite)    |
+| `&>> file`    | `>>file 2>&1` | **both** streams → file (append)      |
+| `>&2`         | `1>&2`    | stdout → wherever **stderr** goes         |
+| `2>&1`        |           | stderr → wherever **stdout** goes         |
+| `< file`      | `0< file` | file → stdin (feed a file **in**)         |
+| `<< EOF`      |           | heredoc — multi-line text → stdin (§§26) |
+| `<<< "text"`  |           | herestring — one string → stdin (§12)|
+| `cmd1 \| cmd2` |          | cmd1's **stdout** → cmd2's **stdin**      |
+| `2>&1 \| cmd` |           | **both** streams → cmd2's stdin           |
+
+> **Shorthand:** `cmd |& cmd2` is bash 4+ shorthand for `cmd 2>&1 | cmd2`. It
+> works on any modern Linux (bash 4.0+, shipped since 2009), but `2>&1 |` is the
+> portable form that runs everywhere — including minimal container images that
+> ship `dash` or BusyBox `ash` as `/bin/sh`. Prefer `2>&1 |` in scripts.
+
+### 4. ⚠️ Order matters — the classic trap
+
+`2>&1` copies wherever stdout points **at that exact moment**, so position
+changes the result completely:
+
+```bash
+cmd > file 2>&1     # stdout→file, THEN stderr→(same file). BOTH in file ✅
+cmd 2>&1 > file     # stderr→terminal (stdout is still there), THEN stdout→file ❌
+```
+
+**Rule: put the file redirect first, `2>&1` last.**
+
+### 5. `/dev/null` — the trash can
+
+A special file that discards everything written to it. Used when you only care
+whether a command **succeeded**, not what it printed:
+
+| Redirect       | Trashes            |
+|----------------|--------------------|
+| `> /dev/null`  | stdout only        |
+| `2> /dev/null` | stderr only        |
+| `&> /dev/null` | both               |
+
+```bash
+if command -v nginx &> /dev/null; then echo "installed"; fi   # silent check
+find / -name "x" 2>/dev/null                                   # hide permission errors
+```
+
+### 6. `tee` — screen **and** file at the same time ⭐ NEW
+
+`>` sends output to a file, but then you **can't see it**. `tee` splits the
+stream in two: one copy to the file, one copy onward to your screen. (Named
+after a plumbing **T-joint** — one pipe in, two out.)
+
+```bash
+echo "hello" | tee out.txt          # prints "hello" AND writes it to out.txt
+echo "more"  | tee -a out.txt       # -a = APPEND (default overwrites!)
+echo "x" | tee f1.txt f2.txt        # write to several files at once
+echo "x" | tee out.txt > /dev/null  # file only, keep the screen quiet
+```
+
+**The Day 45 pattern** — capture *everything* to a timestamped log while still
+watching it live:
+
+```bash
+./deploy.sh 2>&1 | tee "deploy_$(date +%Y%m%d_%H%M%S).log"
+```
+
+Reading it left to right: `2>&1` merges stderr into stdout so **both** go into
+the pipe, then `tee` writes them to the log **and** passes them to your terminal.
+
+> ✅ Verified: with `2>&1 | tee all.log`, both the normal line and the error line
+> appear on screen *and* inside `all.log`. Without the `2>&1`, errors bypass the
+> pipe and never reach the file.
+
+#### ⚠️ The `tee` gotcha: it hides the exit code
+
+A pipeline's exit code is the **last** command's — and the last command is
+`tee`, which almost always succeeds. So failures vanish:
+
+```bash
+false | tee log.txt ; echo $?     # → 0   ❌ the failure is invisible!
+```
+
+Two fixes (both verified):
+
+```bash
+set -o pipefail                    # pipeline fails if ANY part fails
+false | tee log.txt ; echo $?      # → 1   ✅
+
+false | tee log.txt
+echo "${PIPESTATUS[*]}"            # → "1 0"  ✅ exit code of EVERY stage
+```
+
+`set -euo pipefail` already includes `pipefail` — one more reason strict mode is
+a habit. `${PIPESTATUS[@]}` gets its own deep dive on **Day 55**.
+
+### 7. `exec` — redirect the **whole script** at once ⭐ NEW
+
+Instead of adding `>> log` to every line, `exec` re-points the script's own
+streams **from that line onward**:
+
+```bash
+#!/bin/bash
+exec > script.log 2>&1      # EVERYTHING from here goes to script.log
+echo "line one"             # → into the file, not the screen
+echo "an error" >&2         # → also into the file
+```
+
+> ✅ Verified: nothing appears on screen; both lines land in `script.log`.
+
+**The production logging pattern** — combine `exec` with `tee` so the whole
+script logs to a file *and* stays visible (this is what Day 56 wants):
+
+```bash
+#!/bin/bash
+exec > >(tee -a "run.log") 2>&1     # everything: screen + log, appended
+echo "this shows on screen AND in run.log"
+```
+
+The `>( ... )` there is process substitution — see §8 below.
+
+#### Custom file descriptors (3 and up)
+
+FDs 0/1/2 are reserved, but **3–9 are yours**. Handy for a separate audit or
+debug channel that doesn't mix into normal output:
+
+```bash
+exec 3> audit.log        # open FD 3, pointing at audit.log
+echo "normal output"     # → screen
+echo "audit entry" >&3   # → audit.log only
+exec 3>&-                # close FD 3 (the &- means "close")
+```
+
+> ✅ Verified: "normal output" hits the screen, "audit entry" goes only into
+> `audit.log`. Always close with `exec 3>&-` when you're done.
+
+### 8. Process substitution `<( )` and `>( )` ⭐ NEW
+
+Some commands demand **filenames**, not piped input — `diff` and `comm` are the
+classic examples. You can't do `sort a | diff sort b`. Process substitution
+solves this: it runs a command and hands over its output **as if it were a
+file**.
+
+```bash
+diff <(sort listA.txt) <(sort listB.txt)      # diff two sorted lists, no temp files
+comm <(sort listA.txt) <(sort listB.txt)      # 3 columns: only-A | only-B | both
+```
+
+> ✅ Verified on two sample lists — `comm` printed `apple` in column 1 (only in
+> A), `date` in column 2 (only in B), and `banana`/`cherry` in column 3 (both).
+> This is **exactly** the Day 59 exercise (diffing two environments).
+
+| Form    | Direction | Means                                            |
+|---------|-----------|--------------------------------------------------|
+| `<(cmd)`| **read**  | cmd's output appears as a file to read **from**  |
+| `>(cmd)`| **write** | writing to it feeds cmd's stdin (used in §7's `exec > >(tee log)`) |
+
+Useful `comm` flags: `comm -12 a b` = only lines in **both**; `comm -23 a b` =
+only in the **first**. (Suppress column N with `-N`.)
+
+> ⚠️ `comm` and `diff` require **sorted** input — that's why `sort` is inside
+> each substitution.
+
+### 9. "I want to…" — the decision table
+
+| Goal                                        | Use this                        |
+|---------------------------------------------|---------------------------------|
+| Save output to a file                       | `cmd > out.txt`                 |
+| Append instead of overwrite                 | `cmd >> out.txt`                |
+| Capture only errors                         | `cmd 2> err.txt`                |
+| Print **my own** error / usage message      | `echo "Usage: …" >&2`           |
+| Log everything (output **and** errors)      | `cmd > all.log 2>&1`            |
+| Silence everything                          | `cmd &> /dev/null`              |
+| Output and errors in **separate** files     | `cmd > out.txt 2> err.txt`      |
+| See output **and** save it                  | `cmd 2>&1 \| tee out.log`       |
+| Log the **entire script**                   | `exec > script.log 2>&1`        |
+| Log entire script **and** show it           | `exec > >(tee -a run.log) 2>&1` |
+| A separate audit/debug channel              | `exec 3> audit.log` … `>&3`     |
+| Compare two commands' output                | `diff <(cmd1) <(cmd2)`          |
+| Feed a file into a command                  | `cmd < input.txt`               |
+| Feed a literal string in                    | `cmd <<< "text"`                |
+| Catch a failure inside a pipeline           | `set -o pipefail` / `${PIPESTATUS[@]}` |
+
+### 10. Where this shows up next
+
+| Day | What it needs from this section        |
+|-----|----------------------------------------|
+| 40  | `curl -s -o /dev/null -w '%{http_code}'` |
+| 44  | `: > file` truncation, gzip of rotated logs |
+| **45** | **`2>&1 \| tee` — the whole exercise** |
+| 48  | `tail -Fn0 file \| while read -r line` |
+| **55** | **`${PIPESTATUS[@]}` — the tee gotcha above** |
+| **56** | **`exec > >(tee)` for the logging function** |
+| **59** | **`comm`/`diff` with `<( )` process substitution** |
+| 60  | all of it — logging, traps, strict mode |
+
+### Key takeaways
+- **FDs:** 0 = stdin, 1 = stdout, 2 = stderr. Both 1 and 2 default to the screen.
+- **The rule:** no `&` → filename; with `&` → stream number. `N>&M` = "point N
+  where M points."
+- **Order matters:** `> file 2>&1` ✅ — never `2>&1 > file` ❌.
+- **Real output → stdout; errors/logs → stderr (`>&2`).** Keeps pipes clean.
+- **`tee`** = screen *and* file. Use `-a` to append, and **`pipefail`** so it
+  doesn't swallow failures.
+- **`exec > log 2>&1`** redirects the whole script; `exec 3>` opens your own
+  channel; close it with `exec 3>&-`.
+- **`<(cmd)`** makes a command's output look like a file — the key to `diff`/`comm`.
+
+
+### Pipes `|` — chaining commands together
+
+**Pipes `|` — the killer feature.** Connect one command's stdout to the next
+command's stdin, building a chain:
+
+```bash
+cat access.log | grep "404" | wc -l      # count 404 errors
+ps aux | grep nginx                       # find nginx processes
+ls -l | sort -k5 -n | tail -5             # 5 biggest files
+```
+
+This is the Unix philosophy: **small tools, each doing one thing, combined.**
+
+---
+
+<a id="t25"></a>
+
+## 25. Worked examples: `>&2`, `/dev/null`, and the operator table
+
+[↑ Contents](#contents)
+
+> Hands-on practice for the concepts in §24. Read §24 first for the reference; these are the step-by-step walkthroughs that make it stick.
+
+Think of every script as a machine with **two output hoses**:
+
+| Number | Name   | Purpose                                  |
+|--------|--------|------------------------------------------|
+| `0`    | stdin  | where input comes in                     |
+| `1`    | stdout | **normal results** go out here           |
+| `2`    | stderr | **errors / warnings / usage** go out here|
+
+These numbers are called **file descriptors**. By default *both* stdout and
+stderr spray onto your screen, so they look like one thing — but they're two
+separate streams, and you can point each one somewhere different.
+
+### What `>&2` means
+
+`>&2` means **"send this output to file descriptor 2 (stderr)"**. So:
+
+```bash
+echo "Usage: $0 <name>" >&2     # goes to the ERROR hose, not the normal one
+```
+
+### Why it matters — a hands-on example
+
+Make a tiny test script:
+
+```bash
+cat > test.sh << 'EOF'
+#!/bin/bash
+echo "This is NORMAL output"
+echo "This is an ERROR message" >&2
+EOF
+chmod +x test.sh
+```
+
+Run it plainly — both lines appear, because both hoses point at the screen:
+
+```bash
+$ ./test.sh
+This is NORMAL output
+This is an ERROR message
+```
+
+Now capture **only stdout** into a file. The `>` symbol redirects hose 1 only:
+
+```bash
+$ ./test.sh > output.txt
+This is an ERROR message        # still on screen! stderr was NOT redirected
+```
+
+Look inside the file — the error is **not** there:
+
+```bash
+$ cat output.txt
+This is NORMAL output
+```
+
+The two hoses went to two different places. 🎯 Clean up: `rm test.sh output.txt`
+
+### Connect it to the Day 2 script
+
+If the script's real job is to produce a greeting you might save to a file:
+
+```bash
+$ ./2_day.sh John > greeting.txt     # greeting.txt = "Hello, John!"  ✅
+```
+
+Now forget the name:
+
+- **Usage message uses `>&2`** → it rides the error hose, so `>` doesn't capture
+  it. You see the error on screen, and `greeting.txt` stays clean. ✅
+- **Usage message does NOT use `>&2`** → it rides the normal hose, gets captured
+  by `>`, and lands *inside* `greeting.txt`. Your screen shows nothing, you think
+  it worked, but the file is polluted with an error message. ❌
+
+### Rule of thumb
+- **Real output → stdout** (the default, no redirect needed).
+- **Errors, warnings, usage, progress logs → stderr** (`>&2`).
+
+This is why in a pipeline like `kubectl get pods | grep Running`, only the actual
+data flows through the pipe — diagnostic noise on stderr doesn't contaminate it.
+A small habit that separates clean, composable scripts from messy ones.
+
+
+### The three redirect variants
+
+| Redirect       | Meaning                          |
+|----------------|----------------------------------|
+| `> /dev/null`  | trash **stdout** only            |
+| `2> /dev/null` | trash **stderr** only            |
+| `&> /dev/null` | trash **both** stdout and stderr |
+
+Now take this command apart into two pieces:
+
+```bash
+./2_day.sh > /dev/null
+```
+
+- **`/dev/null`** is the **"trash can" of Linux** — a special file that throws
+  away anything sent to it. Write a gigabyte to it and it just vanishes. Nothing
+  is stored, nothing comes back. It's a black hole.
+- **`>`** (from Section 4) redirects **stdout** (hose 1, normal output).
+
+So `./2_day.sh > /dev/null` means: **"run the script and throw away its normal
+output."** stdout disappears into the trash — but **stderr (hose 2) is
+untouched**, so any error messages still appear on your screen.
+
+### Why this is a great test
+
+Because `>` only trashes stdout, anything left on your screen *must* have come
+from stderr. Run the Day 2 script with no argument:
+
+```bash
+$ ./2_day.sh > /dev/null
+pls run the script like this- ./2_day.sh <name>
+```
+
+The usage message still appears — which **proves** it's correctly going to
+stderr (`>&2`). If it were going to stdout, `>` would have trashed it too.
+
+### Where you'll use `/dev/null` in real DevOps work
+
+Often you don't care about a command's *output* — only whether it **succeeded or
+failed** (its exit code). So you silence the output to keep scripts quiet:
+
+```bash
+# Check if a user exists — we don't want the output, just the result
+if id "deploy" &>/dev/null; then
+    echo "User exists"
+fi
+
+# Check if nginx is installed without printing its path
+if command -v nginx > /dev/null; then
+    echo "nginx is installed"
+fi
+```
+
+`id "deploy" &>/dev/null` runs the check **completely silently**, and the `if`
+just reads its exit code. You'll write this pattern constantly in health checks,
+prerequisite validators, and conditionals — it's exactly what Day 9 (checking if
+a user exists) needs.
+
+
+These five look almost identical but do different things. One rule unlocks all of
+them. (Builds on §4 stdout/stderr and §5 `/dev/null`.)
+
+### The one rule
+
+> **Without `&`, the target is a _filename_. With `&`, the target is a
+> _file-descriptor number_.**
+
+So `2>file` sends errors to a file literally named `file`, but `2>&1` sends
+errors to **wherever fd 1 (stdout) is currently pointing**. The `&` means "the
+thing after me is a stream, not a filename."
+
+Recall the streams: **stdout = fd 1** (normal output), **stderr = fd 2** (errors).
+
+### The five operators
+
+| Syntax  | Long form   | Meaning                            | Typical use            |
+|---------|-------------|------------------------------------|------------------------|
+| `>`     | `1>`        | stdout → a **file** (overwrite)    | `cmd > out.txt`        |
+| `2>`    | `2>`        | stderr → a **file**                | `cmd 2> err.txt`       |
+| `&>`    | `>f 2>&1`   | **both** stdout+stderr → a file    | `cmd &> all.log`       |
+| `>&2`   | `1>&2`      | stdout → **wherever stderr goes**  | `echo "oops" >&2`      |
+| `2>&1`  | `2>&1`      | stderr → **wherever stdout goes**  | `cmd > log 2>&1`       |
+
+### When to use which (with examples)
+
+| Goal                                    | Use this                     |
+|-----------------------------------------|------------------------------|
+| Save normal output to a file (overwrite)| `cmd > out.txt`              |
+| **Append** instead of overwriting       | `cmd >> out.txt`             |
+| Capture **only errors**                 | `cmd 2> err.txt`             |
+| Print **your own** error/usage message  | `echo "Usage: ..." >&2`      |
+| Log **everything** (output + errors)    | `cmd > all.log 2>&1`         |
+| Log everything (shorthand)              | `cmd &> all.log`             |
+| **Silence** everything                  | `cmd &> /dev/null`           |
+| Output and errors in **separate** files | `cmd > out.txt 2> err.txt`   |
+
+```bash
+# Real result to a file, errors still visible on screen (§25 idea):
+./3_day.sh 5 2 > result.txt
+
+# Your script sending its OWN usage message to stderr:
+echo "Usage: $0 <name>" >&2
+
+# Capture a command's full log — stdout AND stderr together:
+./deploy.sh > deploy.log 2>&1
+
+# Run a check silently, only care about pass/fail (§25):
+if command -v nginx &> /dev/null; then echo "installed"; fi
+```
+
+### `>&2` vs `2>&1` — mirror images
+
+Read `N>&M` as **"point stream N at stream M's destination."**
+
+- `>&2` = `1>&2` = send **stdout → stderr**. Why `echo "error" >&2` lands on the
+  error stream (used in your Day 3 script).
+- `2>&1` = send **stderr → stdout**. **Merges** errors into normal output — for
+  logging or piping both.
+
+### ⚠️ Order matters
+
+`2>&1` copies wherever stdout points **at that moment**, so position changes
+everything:
+
+```bash
+cmd > file 2>&1     # stdout→file, THEN stderr→(same file). BOTH in file ✅
+cmd 2>&1 > file     # stderr→terminal (stdout still there), THEN stdout→file ❌
+```
+
+> ✅ Verified in real Bash: with `2>&1 > file`, the error line stays on the
+> terminal and only normal output reaches the file — the opposite of what you
+> probably wanted. Put the file redirect **first**.
+
+### Key takeaways
+- `&` before a number = "it's a **stream**, not a filename."
+- `>` overwrites, `>>` appends.
+- `>&2` = my output → stderr; `2>&1` = errors → stdout.
+- Merge both to a file: `> file 2>&1` (or `&> file`) — **redirect order matters**.
+
+> 📖 **Going further — §24** consolidates all of this and adds `tee`
+> (screen *and* file), `exec` (redirect a whole script), custom file descriptors,
+> and process substitution `<( )`. Needed for Days 45, 55, 56 and 59.
+
+---
+
+---
+
+<a id="t26"></a>
+
+## 26. Heredocs (`<< EOF`) for multi-line output
+
+[↑ Contents](#contents)
+
+A **heredoc** ("here-document") lets you feed a **block of multi-line text** into
+a command, instead of typing one line at a time. You'll use it constantly to
+generate YAML manifests and config files.
+
+### Anatomy of the command
+
+```bash
+cat > my_app.yaml << "EOF"
+line one
+line two
+EOF
+```
+
+| Part            | Meaning                                                       |
+|-----------------|---------------------------------------------------------------|
+| `cat`           | the command that will receive the text                        |
+| `> my_app.yaml` | redirect `cat`'s output into this file (the `>` you know)      |
+| `<<`            | the **heredoc operator**: "everything that follows is input"  |
+| `EOF`           | the **marker** for where the text starts and ends             |
+| middle lines    | your actual content                                           |
+| final `EOF`     | the **closing marker** — "the text stops here"                |
+
+Bash reads everything between the opening `<< EOF` and the closing `EOF`, and
+pipes it into `cat`, which writes it to the file.
+
+### `EOF` is just a label, not a magic word
+
+`EOF` means "End Of File" by convention, but **any word works** — the only rules
+are: the closing marker must **match** the opening one, and must sit **alone on
+its own line** with nothing before or after it.
+
+```bash
+cat > test.txt << END_OF_CONFIG
+line one
+line two
+END_OF_CONFIG
+```
+
+This works identically. People just use `EOF` out of habit.
+
+### Why use it? Readability
+
+Without a heredoc, a multi-line file is clumsy:
+
+```bash
+echo "line one" > test.txt
+echo "line two" >> test.txt
+echo "line three" >> test.txt
+```
+
+With a heredoc, it's one clean block:
+
+```bash
+cat > test.txt << EOF
+line one
+line two
+line three
+EOF
+```
+
+### The important part — quoted vs unquoted marker
+
+The quotes around the marker control whether Bash **expands variables and
+commands** inside the heredoc.
+
+**Unquoted `EOF`** → variables and `$(...)` **are expanded**:
+
+```bash
+name="Mahima"
+cat << EOF
+Hello $name
+Today is $(date +%F)
+EOF
+```
+Output:
+```
+Hello Mahima
+Today is 2026-06-16
+```
+
+**Quoted `"EOF"`** → everything is taken **literally**, no expansion:
+
+```bash
+name="Mahima"
+cat << "EOF"
+Hello $name
+Today is $(date +%F)
+EOF
+```
+Output:
+```
+Hello $name
+Today is $(date +%F)
+```
+
+### Why this matters for DevOps
+
+When generating config files you often **want** substitution — e.g. injecting an
+environment name or replica count into a manifest, so use **unquoted** `EOF`:
+
+```bash
+ENV="production"
+REPLICAS=3
+
+cat > deployment.yaml << EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-$ENV
+spec:
+  replicas: $REPLICAS
+EOF
+```
+
+But if the file genuinely contains dollar signs you want kept **literal** — like
+a script using `$1`, or a config with `${VAR}` placeholders meant to be
+substituted *later* — use **quoted** `"EOF"` to protect them. That's exactly the
+Day 47 question (templating manifests).
+
+### Rule to remember
+- `<< EOF` → **"fill in my variables"** (expand)
+- `<< "EOF"` → **"leave everything exactly as I typed it"** (literal)
+
+---
+
+<a id="t27"></a>
+
+## 27. Reading a file line by line
+
+[↑ Contents](#contents)
+
+The **correct**, safe idiom (Day 21) — memorize this exact line:
+
+```bash
+while IFS= read -r line; do
+    echo "len=${#line}: $line"
+done < file
+```
+
+| Piece            | Why it's there                                            |
+|------------------|-----------------------------------------------------------|
+| `IFS=`           | don't trim leading/trailing whitespace (§12)         |
+| `read -r`        | don't let `\` act as an escape (keep text literal)        |
+| `< file`         | feed the file into the loop's stdin                       |
+| `${#line}`       | length of the line (Day 21 needs "lines longer than 80")  |
+
+> ⚠️ **Interview favorite (Day 52):** never do `for line in $(cat file)` — it
+> splits on **spaces**, not lines, and globs. `while IFS= read -r` is the only
+> correct way. Verified line-by-line with `${#line}` lengths.
+
+
+### Section 5 — Why `for line in $(cat file)` is WRONG
+
+The tempting-but-broken alternative — **never use it**:
+
+```bash
+for line in $(cat file); do ... done    # ❌
+```
+
+- `for` iterates over **words**, not lines — `$(cat file)` is split on **spaces**
+  (via `IFS`), so a line `hello world` becomes **two** iterations.
+- It also **glob-expands** — a line containing `*` turns into filenames.
+
+`while IFS= read -r` is the only correct way. This exact contrast is Day 52, a
+senior-interview staple.
+
+### Section 6 — The Day 21 solution
+
+Task: print lines **longer than 80 characters**, with their line numbers.
+
+```bash
+#!/bin/bash
+
+file=$1
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <file>" >&2
+    exit 1
+fi
+if [[ ! -f "$file" ]]; then
+    echo "Error: '$file' is not a file" >&2
+    exit 1
+fi
+
+n=0
+while IFS= read -r line; do
+    (( ++n ))                        # PRE-increment: safe under set -e (§17)
+    if (( ${#line} > 80 )); then
+        echo "$n: $line"
+    fi
+done < "$file"
+```
+
+- **Take the file as `$1`** and validate it (`-f`) — don't hardcode a filename.
+- **`(( ++n ))`** not `(( n++ ))`: starting from 0, post-increment returns exit 1
+  on the first pass, which would abort under `set -e` (§17).
+- `(( ${#line} > 80 ))` — length check; `> 80` means "longer than 80" (80 itself
+  is *not* printed). Verified against exact-80 / 81 / 100-char lines.
+
+#### Key takeaways
+- `while IFS= read -r line; do ... done < file` — memorize it exactly.
+- `IFS=` preserves whitespace; `-r` keeps backslashes literal; `< file` is the input.
+- Guard the **last line without a newline** with `|| [[ -n "$line" ]]`.
+- `${#var}` = length (characters); `${#arr[@]}` = array size.
+- Never `for line in $(cat file)` — it splits on words and globs.
+
+---
+
+---
+
+# Part IV — Text processing
+
+> The four tools that do most of the real work in DevOps scripting.
+
+<a id="t28"></a>
+
+## 28. Which tool when — grep vs sed vs awk vs cut
+
+[↑ Contents](#contents)
+
+Tier 2's heart. Four tools overlap; pick by the job:
+
+| Tool   | Best at…                                        | Reach for it when |
+|--------|-------------------------------------------------|-------------------|
+| `grep` | **finding** lines that match a pattern          | "show/count lines containing X" |
+| `cut`  | pulling **fixed columns** by delimiter          | "give me field 3 of a CSV" |
+| `awk`  | **field-by-field** logic, math, conditionals    | "sum column 2 where column 1 = X" |
+| `sed`  | **editing** a stream (find/replace, delete)     | "replace X with Y", "delete blank lines" |
+| `sort` `uniq` `wc` | ordering, de-duping, counting       | almost always at the end of a pipe |
+
+The magic is **combining** them with pipes `|` (§24):
+```bash
+cat access.log | grep " 404 " | awk '{print $1}' | sort | uniq -c | sort -rn
+#                └ find 404s    └ pull the IP      └ group+count └ most first
+```
+This one line = "top IP addresses hitting 404s" (basically Day 23).
+
+---
+
+<a id="t29"></a>
+
+## 29. `grep` — find lines by pattern
+
+[↑ Contents](#contents)
+
+`grep PATTERN file` prints every **line** that matches PATTERN. It's the single
+most-used text tool in DevOps — searching logs, configs, code, command output.
+
+```bash
+grep "ERROR" app.log        # lines containing ERROR
+grep "ERROR" *.log          # search many files (output is prefixed with filename)
+command | grep "ERROR"      # filter another command's output (very common)
+```
+
+#### The essential flags
+
+| Flag | Meaning | Example |
+|------|---------|---------|
+| `-i` | case-**i**nsensitive (`error`=`ERROR`) | `grep -i error log` |
+| `-c` | **c**ount matching **lines** (a number) | `grep -c ERROR log` |
+| `-v` | in**v**ert — lines that **don't** match | `grep -v DEBUG log` |
+| `-n` | show line **n**umbers | `grep -n ERROR log` |
+| `-r` | **r**ecursive through a directory tree | `grep -r TODO .` |
+| `-l` | **l**ist only the **filenames** that match | `grep -rl TODO .` |
+| `-w` | match whole **w**ords only | `grep -w warn log` |
+| `-x` | match whole **lines** only (exact) | `grep -x DONE log` |
+| `-o` | print **o**nly the matched text, not the line | `grep -o '[0-9]*' log` |
+| `-q` | **q**uiet — no output, just the exit code | `grep -q ERROR log` |
+| `-E` | **E**xtended regex (enables `\|` `()` `+` `?`) | `grep -E 'ERR\|WARN'` |
+| `-A n` | print n lines **A**fter each match | `grep -A2 ERROR log` |
+| `-B n` | print n lines **B**efore each match | `grep -B2 ERROR log` |
+| `-C n` | print n lines of **C**ontext (before+after) | `grep -C2 ERROR log` |
+
+> ⚠️ **Case matters:** `-c` (lowercase) = **count**; `-C` (uppercase) = **context**.
+> A very common mix-up (you hit it in Day 22).
+
+#### grep's exit code — why it works inside `if`
+
+`grep` reports whether it found anything through its **exit status** — which is
+what lets you use it as a condition (like Day 9's `id`):
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | at least one line **matched** |
+| `1` | **no** lines matched |
+| `2` | an **error** (e.g. file not found) |
+
+```bash
+if grep -q "ERROR" app.log; then       # -q = silent, just the exit code
+    echo "errors found!"
+fi
+```
+> Verified: `grep -q` returned `0` when found, `1` when not. Pair `-q` with `if`
+> whenever you only care *whether* something exists, not what it is.
+
+#### Counting: lines vs occurrences (the Day 22 lesson)
+
+| Command | Counts | A line with 3 matches counts as |
+|---------|--------|--------------------------------|
+| `grep -c "warn" f`         | matching **lines**       | 1 |
+| `grep -o "warn" f \| wc -l`| total **occurrences**    | 3 |
+
+`-c` answers "how many lines contain it"; `-o` + `wc -l` answers "how many times
+total." Verified: same file gave `-c`=3 vs occurrences=5.
+
+#### Context — reading *around* a match (`-A` / `-B` / `-C`)
+
+Great for logs: see what happened just before/after an error.
+
+```bash
+grep -A3 "Exception" app.log     # the match + 3 lines after (the stack trace)
+grep -B2 "ERROR"     app.log     # 2 lines of lead-up before each error
+grep -C2 "ERROR"     app.log     # 2 lines both sides
+```
+In the output, a `:` after the line marks the **match**, a `-` marks **context**.
+
+#### Anchors & precision
+
+Make patterns exact so you don't over-match substrings:
+
+| Pattern   | Matches                              |
+|-----------|--------------------------------------|
+| `^ERROR`  | lines **starting** with ERROR        |
+| `done$`   | lines **ending** with done           |
+| `^$`      | **empty** lines                      |
+| `^\s*#`   | comment lines (Day 26)               |
+| `-w warn` | `warn` as a whole word (not `warning`) |
+| `-x DONE` | a line that is **exactly** `DONE`    |
+
+#### Regex: basic vs extended (`-E`)
+
+- **Basic** grep: `.` `*` `^` `$` `[]` work; but `+` `?` `|` `()` need backslashes
+  (`\+`, `\|`, `\(`).
+- **`-E`** (extended, aka `egrep`): `+` `?` `|` `()` work **without** backslashes.
+  Use `-E` whenever your pattern has alternation or groups:
+
+```bash
+grep -E "ERROR|WARN|FATAL" app.log        # any of the three
+grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}" log  # lines starting with a date
+grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" access.log   # pull IPs (Day 23)
+```
+> `-P` (Perl regex — `\d`, `\b`, lookaheads) is available on GNU grep. `-E` covers
+> most needs and is more portable; reach for `-P` only when you need Perl features.
+
+#### Real-world one-liners you'll actually use
+
+```bash
+grep -rn "TODO" src/                     # every TODO with file:line
+grep -c ERROR app.log                    # error count (Day 22)
+grep -v "^#" config | grep -v "^$"       # drop comments and blanks (Day 26)
+grep -i "failed" *.log                   # case-insensitive across logs
+ps aux | grep -v grep | grep nginx       # find nginx processes (skip the grep itself)
+grep -A5 "panic" app.log                 # a crash + the 5 lines after it
+grep -oE "[0-9.]+" access.log | sort | uniq -c   # count numeric tokens
+```
+
+#### Key takeaways
+- `grep PATTERN file` finds **lines**; `-i` ignore case, `-v` invert, `-n` numbers,
+  `-r` recursive, `-w` whole word.
+- **Exit code:** 0=found, 1=not found → use `grep -q` inside `if`.
+- **`-c` = lines**, `-o | wc -l` = occurrences. `-c` ≠ `-C` (context).
+- **`-E`** for `|`, `()`, `+`, `?` without backslashes. Anchor with `^`/`$`/`-w`.
+
+---
+
+<a id="t30"></a>
+
+## 30. `sed` — stream editor (find/replace, delete)
+
+[↑ Contents](#contents)
+
+`sed` = **s**tream **ed**itor. It reads input **line by line**, applies your
+editing command to each line, and prints the result. It's the tool for
+**find/replace**, **deleting lines**, and **printing specific lines** — the
+non-interactive way to edit text (perfect for scripts).
+
+By default `sed` **prints to stdout and does NOT change the file** — you need
+`-i` (below) to edit in place.
+
+### Substitution — `s/old/new/flags` (90% of sed use)
+
+```bash
+sed 's/localhost/0.0.0.0/'  file     # replace the FIRST localhost on each line
+sed 's/localhost/0.0.0.0/g' file     # g = replace ALL on each line (global)
+```
+
+Anatomy of `s/old/new/g`: **s** = substitute, `/` are separators, then the flags.
+
+#### The substitution flags
+
+| Flag | Effect | Example |
+|------|--------|---------|
+| (none) | replace **first** match per line | `s/a/b/` |
+| `g`  | replace **all** matches per line (global) | `s/a/b/g` |
+| `I`  | case-**insensitive** match | `s/hello/hi/I` |
+| `2`  | replace only the **2nd** match | `s/foo/X/2` |
+| `p`  | **print** the line if a swap happened (with `-n`) | `sed -n 's/a/b/p'` |
+
+> `s/foo/X/2g` replaces **from the 2nd match onward** on each line — useful when
+> you want to leave the first occurrence untouched.
+
+#### Different delimiters — avoid "leaning-toothpick" `/`
+
+The separator doesn't have to be `/`. When your pattern contains slashes (paths,
+URLs), use `|` or `#` instead so you don't have to escape every `/`:
+
+```bash
+sed 's|/usr/local|/opt|' file        # clean — no need to escape the slashes
+sed 's/\/usr\/local/\/opt/' file     # ugly equivalent with escaped slashes
+```
+> Verified: `s|/usr/local|/opt|` on `/usr/local/bin` → `/opt/bin`.
+
+#### `&` and `\1` — reuse the matched text
+
+- **`&`** in the replacement = **the whole matched text** (wrap or annotate it):
+  ```bash
+  echo "error 42" | sed -E 's/[0-9]+/[&]/'      # -> error [42]   (& = "42")
+  ```
+- **`\1 \2 …`** = **capture groups** from `\( \)` (or `( )` with `-E`) — great for
+  reformatting:
+  ```bash
+  echo "2026-07-20" | sed -E 's/([0-9]+)-([0-9]+)-([0-9]+)/\3\/\2\/\1/'
+  # -> 20/07/2026   (reordered the three captured groups)
+  ```
+> Verified both. Use **`-E`** for `( )` grouping without backslashes (like grep).
+
+### Printing lines — `-n` + `p`
+
+`-n` silences sed's automatic printing, then `p` prints only what you select —
+turning sed into a line picker:
+
+```bash
+sed -n '5p'      file      # just line 5
+sed -n '5,10p'   file      # lines 5 through 10
+sed -n '$p'      file      # the LAST line ($ = last)
+sed -n '/ERROR/p' file     # only lines matching /ERROR/ (like grep)
+```
+> Verified: `-n '2p'` gave line 2; `-n '$p'` gave the last line.
+
+### Deleting lines — `d`
+
+```bash
+sed '/^#/d'  file          # delete COMMENT lines (start with #)
+sed '/^$/d'  file          # delete BLANK lines
+sed '3d'     file          # delete line 3
+sed '2,5d'   file          # delete lines 2–5
+sed '/ERROR/d' file        # delete lines containing ERROR
+```
+> The Day 26 task (strip comments + blanks) is just: `sed -E '/^\s*(#|$)/d'`.
+
+### Line addressing — "which lines" to act on
+
+Any command can be prefixed with an **address** that selects lines:
+
+| Address    | Selects                          |
+|------------|----------------------------------|
+| `5`        | line 5                           |
+| `5,10`     | lines 5 to 10                    |
+| `$`        | the **last** line                |
+| `/regex/`  | lines matching the regex         |
+| `/a/,/b/`  | from a line matching `a` to one matching `b` |
+
+```bash
+sed '2,$ s/foo/bar/'   file     # substitute only from line 2 to the end
+sed '/START/,/END/d'   file     # delete everything between START and END
+```
+
+### Multiple commands — `-e` or `;`
+
+```bash
+sed -e 's/a/A/' -e 's/c/C/' file      # several -e commands
+sed 's/a/A/; s/c/C/'          file      # or separate with ;
+```
+> Verified: both turned `a b c` into `A b C`.
+
+### Insert / append / change lines — `i` / `a` / `c`
+
+```bash
+sed '2i NEW LINE'  file     # INSERT a line BEFORE line 2
+sed '2a NEW LINE'  file     # APPEND a line AFTER line 2
+sed '3c REPLACED'  file     # CHANGE (replace) line 3 entirely
+```
+> `i` = insert before the line, `a` = append after it, `c` = replace the whole
+> line. (You can also target a pattern: `sed '/^\[db\]/a host=localhost' file`.)
+
+### In-place editing `-i` (Day 25)
+
+By default sed prints to stdout and leaves the file untouched. **`-i`** makes it
+**edit the file directly**:
+
+```bash
+sed -i 's/a/b/' file          # edit in place, NO backup
+sed -i.bak 's/a/b/' file      # edit in place, keep the original as file.bak
+```
+
+> ⚠️ `-i` is **destructive** — it overwrites the file. Best practice: **preview to
+> stdout first**, then apply with **`-i.bak`** so you keep a safety copy
+> (`file.bak`). Day 25 asks for exactly that flow: preview, then in-place + backup.
+
+### Real-world sed one-liners
+
+```bash
+sed 's/\r$//' file                    # strip Windows carriage-returns (CRLF→LF)
+sed -n '10,20p' big.log               # peek at lines 10–20
+sed '/^#/d; /^$/d' config             # drop comments and blanks (Day 26)
+sed -i.bak 's/DEBUG/INFO/g' app.conf  # bulk config change with backup
+sed -n '$=' file                      # print the line count (like wc -l)
+sed 's/^/    /' file                  # indent every line by 4 spaces
+```
+
+#### Key takeaways
+- `sed 's/old/new/g'` is the workhorse; **`g`** = all per line, **`I`** = ignore case.
+- sed **prints by default and doesn't touch the file** — use **`-i.bak`** (portable)
+  to edit in place with a backup.
+- `-n` + `p` prints selected lines; `d` deletes them; address with numbers, `$`,
+  or `/regex/`.
+- Use a different delimiter (`s|...|...|`) for paths; `&`/`\1` reuse matched text
+  (with `-E` for groups).
+- Combine commands with `;` or `-e`; `i`/`a`/`c` insert/append/change whole lines.
+
+---
+
+<a id="t31"></a>
+
+## 31. `awk` — field-by-field processing
+
+[↑ Contents](#contents)
+
+`awk` is a mini text-processing language. For **every line** it splits the line
+into **fields** and runs your little program on it. It's the tool when you need
+to work with **columns** — print some, filter on them, or do math.
+
+#### The mental model: fields
+
+`awk` chops each line into fields (on whitespace by default) and numbers them:
+
+```
+alice   30   engineering
+  $1     $2      $3            $0 = the whole line
+```
+
+| Variable | Means                              |
+|----------|------------------------------------|
+| `$0`     | the **whole line**                 |
+| `$1`, `$2`, … | field 1, field 2, …           |
+| `$NF`    | the **last** field (NF = # fields) |
+| `NF`     | **N**umber of **F**ields on this line |
+| `NR`     | current line **N**umber (**R**ecord) |
+
+```bash
+awk '{print $1}'  file        # first column of every line
+awk '{print $NF}' file        # LAST column (handy — position may vary)
+awk '{print NR, $0}' file     # number each line
+```
+
+#### The structure: `pattern { action }`
+
+Every awk program is **pattern** + **action**. Either part is optional:
+
+```bash
+awk '{print $1}'        file   # no pattern → action runs on EVERY line
+awk '/ERROR/'           file   # pattern only → print matching lines (default action)
+awk '/ERROR/ {print $2}' file  # both → on ERROR lines, print field 2
+awk '$2 > 28 {print $1}' file  # pattern can be a COMPARISON on a field
+```
+
+- **Pattern** decides *which* lines (a `/regex/` or a condition like `$3=="NYC"`).
+- **Action** in `{ }` decides *what to do*. Default action is `print $0`.
+- Verified: `awk '$2 > 28 {print $1}'` printed the people older than 28.
+
+#### Choosing lines: `NR`, ranges, regex, and `NF`
+
+The **pattern** slot accepts far more than a regex. These are the selectors you'll
+reach for constantly:
+
+```bash
+awk 'NR == 6'                file   # ONE specific line (line 6)
+awk 'NR == 3, NR == 6'       file   # a RANGE of lines, 3 through 6 (inclusive)
+awk 'NR > 1'                 file   # skip the header row
+awk '/Raju/'                 file   # lines containing "Raju"
+awk '/Raju|Alex|Sham/'       file   # ANY of several words — | means OR
+awk '!/DEBUG/'               file   # lines NOT matching (! negates)
+awk 'NF == 0 {print NR}'     file   # find EMPTY lines (zero fields)
+awk 'NF'                     file   # print only NON-empty lines (NF is 0 = false)
+```
+
+> ✅ Verified: `NR==2, NR==4` printed exactly lines 2–4; `NF==0` correctly
+> reported the one blank line; `/Raju|Alex/` matched both names.
+
+The range form `NR==3, NR==6` is a **range pattern** — it switches "on" at the
+first match and "off" at the second. It works with regexes too:
+`awk '/START/,/END/'` prints everything between two markers.
+
+That last one-liner deserves a note: **`awk 'NF'`** works because awk treats `0`
+as false and any non-zero number as true. A blank line has `NF == 0` → false →
+not printed. It's the shortest way to strip blank lines.
+
+#### Matching inside one field: `~` and `!~`
+
+`/regex/` on its own searches the **whole line**. To search a **specific field**,
+use the match operator `~`:
+
+```bash
+awk '$2 ~ /^A/'      file   # field 2 STARTS WITH "A"
+awk '$2 !~ /a/'      file   # field 2 does NOT contain "a"
+awk '$3 == "Loan"'   file   # field 3 EXACTLY equals "Loan"  (== not ~)
+```
+
+| Operator | Means                          |
+|----------|--------------------------------|
+| `~`      | field **matches** the regex    |
+| `!~`     | field does **not** match       |
+| `==`     | field is **exactly** equal (string or number) |
+
+> ✅ Verified: `$2 ~ /a/` matched Raju/Paul/Sham; `$2 !~ /a/` returned Alex.
+
+##### ⚠️ Numbers vs strings — a real trap
+
+awk compares **numerically** if both sides look like numbers, but
+**alphabetically** if either side is quoted:
+
+```bash
+awk '$1 > 5'     nums.txt   # numeric  → matches 10 and 9  ✅
+awk '$1 > "5"'   nums.txt   # STRING   → matches only 9    ❌
+```
+> ✅ Verified — with quotes, `"10"` sorts *before* `"5"` alphabetically, so line
+> `10` is skipped. **Don't quote numbers you want compared as numbers.**
+
+Alphabetical comparison is genuinely useful for **timestamps**, though, because
+`HH:MM:SS` sorts correctly as text:
+
+```bash
+awk '$3 >= "15:55:55" && $3 <= "15:55:56"' /var/log/messages   # log time window
+```
+> ✅ Verified on a sample log — returned exactly the two lines in the window.
+
+##### Case-insensitive matching
+
+```bash
+awk 'tolower($0) ~ /raju/' file        # ✅ PORTABLE — works in every awk
+awk 'BEGIN{IGNORECASE=1} /raju/' file  # ⚠️ gawk ONLY
+```
+
+> ⚠️ **`IGNORECASE` is a gawk extension, not standard awk.** On RHEL/Fedora/Amazon
+> Linux `awk` *is* gawk so it works — but **Debian and Ubuntu ship `mawk` by
+> default**, where it silently does nothing and you get **zero matches with no
+> error**. Verified here on a non-gawk awk: no output, no warning. Use the
+> `tolower()` form in anything portable.
+
+#### Custom delimiter with `-F`
+
+By default fields split on whitespace. `-F` sets a different separator — essential
+for CSVs (Day 24):
+
+```bash
+awk -F, '{print $1, $3}' data.csv     # comma-separated → fields 1 and 3
+awk -F: '{print $1}' /etc/passwd       # colon-separated → usernames
+```
+> Verified: `awk -F, '{print $1, $3}'` on `alice,30,NYC` → `alice NYC`.
+> Note: `print $1, $3` (comma) puts a space between them; `print $1 $3` (no comma)
+> jams them together.
+
+##### Several delimiters at once
+
+`-F` accepts a **regex**, so a character class `[...]` splits on *any* of the
+listed characters — perfect for messy files mixing commas and colons:
+
+```bash
+awk -F'[,:]'   '{print $2}' multi.txt    # split on comma OR colon
+awk -F'[,:; ]' '{print $1}' messy.txt    # comma, colon, semicolon OR space
+awk -F'\t'     '{print $2}' data.tsv     # tab-separated
+```
+> ✅ Verified: `-F'[,:]'` on `a,b:c` → field 2 is `b`; on `d:e,f` → `e`.
+
+##### `OFS` — the **output** separator
+
+`-F` sets the **input** separator. The **output** separator is `OFS` (default: a
+single space). It only kicks in when awk **rebuilds** `$0` — which happens the
+moment you assign to any field:
+
+```bash
+awk -F, '{$2="CHANGED"; print $0}'                <<< "a,b,c"   # → a CHANGED c
+awk -F, 'BEGIN{OFS="|"} {$2="CHANGED"; print $0}' <<< "a,b,c"   # → a|CHANGED|c
+```
+> ⚠️ Verified: reading a CSV with `-F,` and modifying a field gives you
+> **space-separated** output, silently destroying the CSV format. Set
+> `BEGIN{OFS=","}` (or `-v OFS=,`) whenever you edit fields and want the format kept.
+
+#### `BEGIN` and `END` — run once, before/after everything
+
+```bash
+awk 'BEGIN {print "Report:"} {print $1} END {print NR" rows"}' file
+```
+- `BEGIN { }` runs **once before** any line — set up headers, variables.
+- `END { }` runs **once after** the last line — print totals, summaries.
+
+#### Math & totals (awk's superpower)
+
+The key idea: **awk runs your `{ }` block once for _every_ line, and variables
+keep their value between lines.** So a variable can *accumulate* as awk walks down
+the file.
+
+```bash
+awk '{sum += $2} END {print sum}' file      # total of column 2
+```
+
+Take it apart:
+- `sum += $2` means `sum = sum + $2` — "add this line's field 2 onto `sum`."
+- `sum` **starts at 0 automatically** (awk treats an unset variable as 0/empty —
+  no need to initialise it).
+- The `{ }` block runs **per line**, so `sum` grows line by line.
+- **`END { print sum }`** runs **once, after the last line** — that's where the
+  final total lives.
+
+Watch it accumulate over the file (name / age / dept) — verified trace:
+
+| Line read           | `$2` (age) | `sum += $2` → `sum` |
+|---------------------|------------|---------------------|
+| `alice 30 eng`      | 30         | 0 + 30 = **30**     |
+| `bob 25 sales`      | 25         | 30 + 25 = **55**    |
+| `carol 35 eng`      | 35         | 55 + 35 = **90**    |
+| *(END block runs)*  | —          | prints **90**       |
+
+Why the total must go in `END`: if you `print sum` inside the main `{ }` block,
+it prints after *every* line (30, 55, 90). You only want the **final** value, so
+you print it in `END`.
+
+```bash
+awk '{sum += $2} END {printf "avg = %.1f\n", sum/NR}' file   # 90/3 = avg = 30.0
+```
+`NR` is the line count at the end (3 here), so `sum/NR` is the average. **`printf`**
+formats numbers precisely — `%d` = integer, `%.1f` = one decimal, `%s` = string —
+whereas plain `print` gives you no control over decimals.
+
+#### Grouping & counting with associative arrays
+
+An **associative array** is a lookup table with **named keys** instead of number
+indexes — like a Python dict or a real-world tally sheet ("engineering: ||, sales:
+|"). In awk you don't declare it; you just use it, and any key starts at 0.
+
+```bash
+awk '{count[$3]++} END {for (k in count) print k, count[k]}' file
+```
+
+The one line that does the work is `count[$3]++`:
+- `$3` is this line's 3rd field (the department) — it becomes the **key**.
+- `count[$3]` is the tally for that key (starts at 0 automatically).
+- `++` adds 1 to it.
+- So each line means *"add one to the counter for whatever department is on this
+  line."*
+
+Watch the array fill up — verified trace:
+
+| Line read       | `$3` (dept) | effect               | array so far            |
+|-----------------|-------------|----------------------|-------------------------|
+| `alice 30 eng`  | engineering | `count[engineering]++` | `engineering→1`       |
+| `bob 25 sales`  | sales       | `count[sales]++`       | `engineering→1, sales→1` |
+| `carol 35 eng`  | engineering | `count[engineering]++` | `engineering→2, sales→1` |
+
+Then the **`END`** block walks every key and prints the tally:
+- `for (k in count)` — loop over each **key** `k` that exists in the array.
+- `print k, count[k]` — print the key and its count → `engineering 2`, `sales 1`.
+
+> This is a **one-pass GROUP BY** — no need to sort first, awk tallies as it goes.
+> Swap `$3` for any field and you can count **anything**: HTTP status codes
+> (Day 53), requests per IP, errors per host. It's one of the most powerful
+> one-liners in all of shell.
+
+#### `if / else` — logic inside the action
+
+You can filter with a pattern *or* branch inside the action. Use `if/else` when
+you want to do something **different** per line rather than skip lines:
+
+```bash
+# Label each row High/Low based on salary (field 5)
+awk 'NR>1 && NF {if ($5 > 50000) label="High"; else label="Low"; print $2, $5, label}' sample.txt
+```
+```
+Raju 45000 Low
+Paul 65000 High
+Alex 52000 High
+Sham 38000 Low
+```
+> ✅ Verified. `else if` chains work too, exactly like C.
+
+**Conditional totals** — sum only the rows that qualify:
+
+```bash
+awk '$3=="Loan" {sum += $5} END {print "Loan total:", sum}' sample.txt   # → 97000
+```
+Here the *pattern* does the filtering, which is simpler than an `if` inside the
+block. Both work — prefer the pattern when you're just selecting lines.
+
+**Track a running maximum** (longest line in a file):
+
+```bash
+awk '{if (length($0) > max) {max=length($0); line=$0}} END {print max": "line}' file
+```
+> ✅ Verified → `25: 2 Paul Sales Mumbai 65000`. Same shape as `sum +=` — a
+> variable that survives between lines, reported in `END`.
+
+#### Built-in functions
+
+awk ships with string functions you'd otherwise need `sed`/`tr` for:
+
+| Function | Does | Example |
+|----------|------|---------|
+| `length(s)` | character count (no arg = `length($0)`) | `length($2)` → `4` |
+| `toupper(s)` / `tolower(s)` | change case | `toupper($2)` → `RAJU` |
+| `index(s, t)` | position of `t` inside `s`, **1-based**, `0` if absent | `index($0,"Paul")` → `3` |
+| `substr(s, start, len)` | extract part of a string | `substr($2,1,3)` → `Raj` |
+| `split(s, arr, sep)` | split a string into an array; returns the count | `split($1,a,"-")` |
+| `gsub(re, new)` | **g**lobal **sub**stitute; returns how many it replaced | `gsub("Raju","Raja")` |
+| `sub(re, new)` | same but only the **first** match per line | `sub(/error/,"ERR")` |
+
+```bash
+awk '{print $2, length($2)}'          sample.txt   # word + its length
+awk '{print NR, index($0, "Paul")}'   sample.txt   # where "Paul" starts (0 = not on this line)
+awk 'NR==2 {print toupper($2)}'       sample.txt   # → RAJU
+awk '{gsub("Raju","Raja"); print $0}' sample.txt   # replace, then print the edited line
+```
+> ✅ All verified. Two things about **`gsub`** that surprise people:
+> 1. It **edits in place** and returns a *count*, not the new string. So you call
+>    it as a statement, then `print $0` — don't write `print gsub(...)`.
+> 2. It defaults to operating on `$0`. Give it a third argument to target one
+>    field: `gsub("a","A",$2)`.
+
+#### Loops
+
+Three forms, all usable in `BEGIN`, `END`, or the main block:
+
+```bash
+awk 'BEGIN {for (i=1; i<=3; i++) printf "%d ", i}'          # C-style  → 1 2 3
+awk 'BEGIN {n=1; while (n<=3) {printf "%d ", n; n++}}'      # while    → 1 2 3
+awk 'BEGIN {m["Math"]=40; for (s in m) print s, m[s]}'      # for-in over an array
+```
+> ⚠️ **`for (k in arr)` gives no guaranteed order** — awk uses a hash internally.
+> Verified: keys came back `English` then `Math`, not insertion order. Pipe
+> through `sort` if order matters: `awk '…' | sort -k2 -rn`.
+
+Arrays come in both flavours, and you never declare them:
+
+```bash
+awk 'BEGIN {a[1]="x"; a[2]="y"; for (i=1;i<=2;i++) print i, a[i]}'   # indexed
+awk 'BEGIN {marks["Math"]=40; marks["English"]=50}'                   # associative
+```
+Under the hood awk keys are **always strings** — `a[1]` and `a["1"]` are the same
+slot. Indexed arrays are just associative arrays with numeric-looking keys.
+
+#### Custom functions
+
+For logic you reuse, define your own with `function`:
+
+```bash
+awk 'function add(x, y) { return x + y }
+     BEGIN { print "3+4 =", add(3,4) }'          # → 3+4 = 7
+```
+> ✅ Verified. Two rules worth knowing: arrays are passed **by reference**
+> (changes inside the function stick), scalars by value. And awk has no `local`
+> keyword — the convention is to declare locals as **extra parameters** you never
+> pass: `function f(a, b,    i, tmp)` — the gap marks `i`/`tmp` as internal.
+
+#### Putting awk in its own file
+
+Long programs don't belong on one shell line. Two ways to file them:
+
+**1. A `.awk` file run with `-f`:**
+
+```awk
+# report.awk
+BEGIN { print "=== Salary Report ===" }
+NR > 1 && NF { total += $5; n++; print $2 "\t" $5 }
+END { printf "Total: %d  Average: %.2f\n", total, total/n }
+```
+```bash
+awk -f report.awk sample.txt
+```
+
+**2. An executable script with a shebang:**
+
+```awk
+#!/usr/bin/awk -f
+NR > 1 && NF && $5 > 50000 { print $2, $5 }
+```
+```bash
+chmod +x top.awk
+./top.awk sample.txt          # runs directly, file is the argument
+```
+> ✅ Both verified. Note the shebang is **`#!/usr/bin/awk -f`** — the `-f` is
+> required, and on Linux awk lives at `/usr/bin/awk`. `#!/usr/bin/env awk -f` is
+> the more portable form. Inside a `.awk` file, `#` starts a comment and no outer
+> quoting is needed — a big readability win over cramming it into `'...'`.
+
+#### Real-world one-liners
+
+```bash
+awk '{print $1}' access.log | sort | uniq -c | sort -rn   # top IPs (Day 23)
+awk -F, 'NR>1 {print $1}' data.csv                         # skip header row (NR>1)
+awk '$9 == 500' access.log                                 # lines where field 9 is 500
+awk '{print $NF}' file                                     # last field of each line
+df -h | awk 'NR>1 {print $5, $6}'                          # disk %use and mount
+```
+
+**Cleaning up other commands' output** — awk shines at trimming noise:
+
+```bash
+ls -ltr | awk 'NR>1 {print $NF}'          # filenames only, skipping the "total" line
+ls -ltr | awk '$6 == "Oct"'               # only files modified in October
+ps aux  | awk '$3 > 50 {print $2, $11}'   # PIDs burning >50% CPU
+systemctl status nginx | awk 'NR==3 {print $2}'   # just the Active/Inactive word
+free -m | awk 'NR==2 {printf "%.1f%%\n", $3/$2*100}'   # memory used, as a percent
+awk -F: '$3 >= 1000 {print $1}' /etc/passwd         # real (non-system) users
+```
+> ✅ Verified: `ls -ltr | awk 'NR>1 {print $NF}'` listed filenames with the
+> `total` header dropped. `NR>1` is the universal "skip the header" idiom.
+
+**The Day 37 pattern** — strip a `%` and compare it as a number:
+
+```bash
+df -h | awk 'NR>1 {gsub("%","",$5); if ($5 > 80) print "WARNING:", $6, $5"%"}'
+```
+`gsub("%","",$5)` deletes the `%` from field 5 (replacing it with nothing), which
+turns `"85%"` into `85` so the numeric `>` works. Exactly the hint on your
+[37_day.sh](Tier-3_Real-World_DevOps%20Patterns_%28Days%2036–50%29/37_day.sh).
+
+#### Key takeaways
+- awk = **`pattern { action }`** run per line; fields are `$1`,`$2`,…,`$NF`.
+- **Patterns** select lines: `/regex/`, `NR==6`, `NR==3,NR==6` (range), `NF==0`
+  (blank), `$2 ~ /re/` (one field), `!` to negate.
+- `-F` sets the delimiter — `-F,` for CSV, `-F'[,:]'` for several at once. Set
+  **`OFS`** too if you modify fields, or your output separator reverts to a space.
+- **Don't quote numbers** in comparisons: `$1 > 5` is numeric, `$1 > "5"` is
+  alphabetical (and wrong).
+- `NR` = line number, `NF` = field count. `NR>1` skips a header; bare `NF` drops
+  blank lines.
+- `BEGIN`/`END` for headers/totals; `sum += $n` accumulates; `printf` formats.
+- `arr[$k]++` counts by key — a one-line GROUP BY.
+- **Functions:** `length` `index` `substr` `split` `toupper` `tolower`, and
+  `gsub(re,new)` which edits in place and returns a *count*.
+- Full programs: `if/else`, `for`, `while`, arrays and `function` — put anything
+  long in a `.awk` file and run `awk -f script.awk data`.
+- ⚠️ **`IGNORECASE` is gawk-only** (fails silently on Debian/Ubuntu's mawk) — use
+  `tolower($0) ~ /x/`.
+- Reach for awk over `cut` when you need **logic, math, or conditions** on columns.
+
+---
+
+<a id="t32"></a>
+
+## 32. `cut`, `sort`, `uniq` — the pipeline finishers
+
+[↑ Contents](#contents)
+
+These three almost always sit at the **end of a pipe**, shaping the final output.
+
+### `cut` — pull out columns
+
+Simplest column extractor. Pick fields by a delimiter, or characters by position:
+
+```bash
+cut -d, -f1,3 data.csv     # -d = delimiter (comma), -f = fields 1 AND 3 (Day 24)
+cut -d: -f1 /etc/passwd     # colon-delimited → usernames (Day 9)
+cut -f2 file                # DEFAULT delimiter is TAB
+cut -c1-5 file              # -c = CHARACTERS 1–5 (by position, not fields)
+```
+| Flag  | Meaning                          |
+|-------|----------------------------------|
+| `-d`  | the **d**elimiter (default: tab) |
+| `-f`  | which **f**ields (`-f1`, `-f1,3`, `-f2-4`) |
+| `-c`  | **c**haracters by position (`-c1-5`) |
+
+> ⚠️ `cut -d' '` treats **each single space** as a separator — so runs of spaces
+> create empty fields. For whitespace-separated columns with irregular spacing,
+> use **`awk`** instead (it collapses whitespace runs). Verified: `cut -c1-3` of
+> `abcdefg` → `abc`.
+
+### `sort` — order lines
+
+```bash
+sort file            # alphabetical (lexical) — "10" comes BEFORE "2"!
+sort -n file         # -n = NUMERIC — 2, 4, 10, 33 (the right order for numbers)
+sort -r file         # -r = reverse
+sort -rn file        # numeric, descending (biggest first)
+sort -u file         # -u = sort AND remove duplicates in one step
+sort -k2 file        # sort by the 2nd field
+sort -t, -k3 -n f    # -t = field separator, sort by field 3 numerically
+sort -h file         # -h = human sizes (2K, 5M, 1G) sort correctly
+```
+| Flag  | Meaning                              |
+|-------|--------------------------------------|
+| `-n`  | **n**umeric sort (not text order)    |
+| `-r`  | **r**everse                          |
+| `-u`  | **u**nique (dedupe while sorting)    |
+| `-k`  | sort by a **k**ey/field (`-k2`)      |
+| `-t`  | field separator (`-t,`)              |
+| `-h`  | **h**uman-readable sizes (`-h`)      |
+
+> ⚠️ **The #1 sort gotcha:** default sort is **lexical** — `10` sorts before `2`
+> because it compares character-by-character (`"1" < "2"`). Verified: plain sort
+> gave `10 2 33 4`; `sort -n` gave `2 4 10 33`. **Always `-n` for numbers.**
+
+### `uniq` — collapse duplicate lines
+
+```bash
+uniq file            # collapse ADJACENT identical lines into one
+uniq -c file         # -c = prefix each line with its COUNT
+uniq -d file         # -d = show only lines that ARE duplicated
+uniq -u file         # -u = show only lines that are UNIQUE (never repeated)
+```
+
+> ⚠️ **`uniq` only looks at ADJACENT lines** — you must **`sort` first**, or
+> duplicates that aren't next to each other won't be collapsed. Verified: on
+> `a a b a`, plain `uniq -c` gave `2 a / 1 b / 1 a` (wrong — two separate "a"
+> groups); `sort | uniq -c` gave `3 a / 1 b` (correct).
+
+### The famous "count by frequency" idiom (Day 23)
+
+Put them together and you get the most-used log-analysis one-liner in existence:
+
+```bash
+sort | uniq -c | sort -rn
+#  │      │         └─ sort by that count, biggest first (-r reverse, -n numeric)
+#  │      └─ collapse + prefix each with its count
+#  └─ bring identical lines together so uniq can see them
+```
+
+Full example — top IP addresses in an access log (Day 23):
+```bash
+awk '{print $1}' access.log | sort | uniq -c | sort -rn | head
+#   └ pull the IP column   └ group  └ count    └ rank    └ top 10
+```
+> Verified: this pattern correctly surfaced `3 10.0.0.1` as the most frequent IP.
+
+### `cut` vs `awk` — which to use?
+- **`cut`** — simple, fixed single-char delimiter, just grabbing columns.
+- **`awk`** — whitespace-run delimiters, or when you need **logic, math, or
+  conditions** (`$3 > 100`, sums, grouping).
+
+#### Key takeaways
+- `cut -d X -f N` grabs columns; `-c` grabs characters by position.
+- `sort -n` for numbers (default is lexical — `10` before `2`!); `-rn` = biggest
+  first; `-u` dedupes; `-k`/`-t` sort by a field.
+- `uniq` needs a **`sort` first** (adjacent-only); `-c` counts.
+- `sort | uniq -c | sort -rn` = the count-by-frequency idiom.
+
+---
+
+# Part V — Files & the system
+
+> Working with the filesystem, time, processes and users.
+
+<a id="t33"></a>
+
+## 33. `find` — searching the filesystem
+
+[↑ Contents](#contents)
+
+`find` walks a directory tree and locates files/dirs matching your criteria — by
+**name, type, size, or age** — and can **run a command** on each. It's *the* tool
+for "find these files and do something with them" (Days 17, 31, 36).
+
+The shape is **`find <where> <tests> <action>`**:
+
+```bash
+find . -type f -name "*.log"
+#    │     │        └ test: name matches *.log
+#    │     └ test: only regular files
+#    └ where to start ( . = here; find RECURSES by default )
+```
+- **`find` recurses automatically** — it searches the whole tree under the start
+  path, no flag needed.
+- **No action given → default is `-print`** (print each match).
+
+#### Where to search
+
+```bash
+find .            # current directory and everything below
+find /var/log     # a specific directory
+find . /tmp       # multiple starting points at once
+```
+
+#### Tests — narrow down what matches
+
+**By name / type:**
+
+| Test | Matches |
+|------|---------|
+| `-name "*.log"`  | name matches the glob (case-sensitive) |
+| `-iname "*.log"` | name matches, case-**i**nsensitive |
+| `-type f`        | regular **f**iles |
+| `-type d`        | **d**irectories |
+| `-type l`        | symbolic **l**inks |
+| `-path "*/sub/*"`| the full **path** matches a glob |
+| `-empty`         | empty files or directories |
+
+**By size / time:**
+
+| Test | Matches |
+|------|---------|
+| `-size +1M`  | larger than 1 MB (`+`=more, `-`=less; units `c` `k` `M` `G`) |
+| `-mtime +7`  | modified **more** than 7 days ago (`-7` = within 7 days) |
+| `-mmin -60`  | modified within the last 60 minutes |
+| `-newer FILE`| modified more recently than `FILE` |
+
+#### Combining tests — AND / OR / NOT
+
+```bash
+find . -type f -name "*.log"                        # AND is implicit (both must match)
+find . -name "*.log" -o -name "*.txt"                # -o = OR
+find . -type f ! -name "*.log"                       # ! (or -not) = NOT
+find . -type f \( -name "*.log" -o -name "*.txt" \)  # group with escaped \( \)
+```
+
+#### Depth control
+
+```bash
+find . -maxdepth 1 -type f     # only the current dir — don't recurse
+find . -mindepth 2             # skip the top level
+```
+
+#### Actions — do something with each match
+
+| Action | Effect |
+|--------|--------|
+| `-print`          | print the path (the default) |
+| `-delete`         | **delete** the match (⚠️ irreversible) |
+| `-exec cmd {} \;` | run `cmd` **once per file** (`{}` = the file) |
+| `-exec cmd {} +`  | run `cmd` **once with all files** (fewer processes, faster) |
+| `-print0`         | print paths NUL-separated (pair with `xargs -0`) |
+
+```bash
+find . -name "*.log" -exec wc -l {} +     # count lines in all .log files (one wc call)
+find . -name "*.tmp" -delete               # delete every .tmp file
+find /tmp -type f -mtime +7 -delete        # clean files older than 7 days (Day 36)
+```
+
+**`\;` vs `+`** (verified):
+- `-exec cmd {} \;` → runs `cmd` **separately for each** file (N processes).
+- `-exec cmd {} +`  → passes **all** files to **one** `cmd` (much faster on many files).
+
+#### Worked example: `find "$dir" -type f -exec du -h {} +` (Day 31)
+
+This one command — the heart of Day 31 (largest files) — is worth reading in full:
+
+```bash
+find "$dir" -type f -exec du -h {} +
+```
+
+| Piece | Meaning |
+|-------|---------|
+| `find` | walk the tree (recurses by default) |
+| `"$dir"` | **where to start** — the directory to scan (quoted → spaces safe) |
+| `-type f` | **only regular files** — skip directories, symlinks |
+| `-exec ... +` | run a command on the matches |
+| `du -h {}` | the command: `du -h`, with `{}` = the found file(s) |
+| `+` | **batch**: pass *all* files to **one** `du` call |
+
+Two tricky bits:
+- **`{}` is a placeholder** — find substitutes the file paths where `{}` sits, so
+  `du -h {}` becomes `du -h ./a.log ./b.txt …`.
+- **`du -h`** = **d**isk **u**sage, **h**uman-readable (`8.0K`, `20K`, `88K`), so
+  each output line is `SIZE⇥PATH`.
+
+> ⚠️ **Why `-type f` matters here beyond filtering:** `du` on a *directory* reports
+> the directory's **total**, but `du` on a *file* reports **that file's** size.
+> `-type f` guarantees only files reach `du`, so you get **per-file** sizes — which
+> is exactly what "largest files" needs.
+
+**Completing Day 31** — that command lists sizes unsorted; pipe it to rank them:
+
+```bash
+find "$dir" -type f -exec du -h {} + | sort -rh | head -5
+#                                       │          └ keep the top 5
+#                                       └ sort by size, human-readable, descending
+```
+- `sort -rh` → `-h` understands `K`/`M`/`G` suffixes; `-r` = biggest first.
+- `head -5` → the 5 largest. Verified end-to-end.
+
+#### ⚠️ Safety with spaces & newlines: `-print0` + `xargs -0` (Day 54)
+
+Filenames can contain spaces or newlines, which break naive loops/pipes. The safe
+way to feed find's results into another command:
+
+```bash
+find . -type f -name "*.log" -print0 | xargs -0 rm    # NUL-separated → space-safe
+```
+`-print0` separates paths with a NUL byte and `xargs -0` splits on NUL, so a name
+like `my report.log` stays intact (Day 54).
+
+#### Real-world `find` patterns
+
+```bash
+find . -type f -name "*.sh"                            # all shell scripts
+find /var/log -type f -mtime +30 -delete                # purge logs older than 30 days
+find . -type f -size +100M                               # find big files
+find . -type d -empty -delete                            # remove empty directories
+find . -type f -exec du -h {} + | sort -rh | head -5     # 5 LARGEST files (Day 31)
+find . -type f -name "*.conf" -exec grep -l "debug" {} + # configs containing "debug"
+```
+
+> The **5-largest-files** line is Day 31: `find` lists every file with its size
+> (`du -h`), `sort -rh` orders by human-readable size (descending), `head -5` takes
+> the top. Verified.
+> Note: `-printf` (custom output format) is a **GNU find** (Linux) feature.
+
+#### `find` key takeaways
+- `find <where> <tests> <action>` — recurses by default; default action is print.
+- Tests: `-name`/`-iname`, `-type f/d/l`, `-size`, `-mtime`/`-mmin`, `-empty`, `!`, `-o`.
+- `-exec cmd {} +` (batched, fast) vs `-exec cmd {} \;` (per file); `-delete` removes.
+- Use `-print0 | xargs -0` for filenames with spaces/newlines (Day 54).
+- `find ... -exec du -h {} + | sort -rh | head` = largest files (Day 31).
+
+---
+
+<a id="t34"></a>
+
+## 34. Links — symbolic & hard
+
+[↑ Contents](#contents)
+
+### The two kinds of links: symbolic & hard
+
+Linux has **two** ways to make one file reachable under another name. They look
+similar but work very differently. (The file-test operators used here — `-e`,
+`-f`, `-d`, `-L`, `-s` — live in §14.)
+
+#### 1. Symbolic links (symlinks / "soft links")
+
+A **symlink** is a tiny file whose only content is **a path** pointing to another
+file or directory — much like a **shortcut** on Windows. Open the link and the
+system transparently redirects you to the **target**.
+
+```
+softlink  ──points to──►  /real/path/to/file.txt
+```
+
+Create it with **`ln -s TARGET LINKNAME`** (`-s` = symbolic). `ls -l` shows a
+leading `l` and the arrow:
+
+```bash
+$ ln -s realfile.txt softlink.txt
+$ ls -l softlink.txt
+lrwxr-xr-x  1 you staff  12 Jul 19 softlink.txt -> realfile.txt
+^                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+l = it's a link                    points here
+```
+
+Properties:
+- Stores a **path**, not the data — so most tools and tests **follow** it to the
+  target (`-f`, `-d`, `-e`), *except* **`-L`** (also `-h`), which checks the link
+  **itself**. This "follow vs. don't-follow" split is what causes the Day 7
+  ordering bug (§3).
+- Can point **across filesystems/disks**, and can link **directories**.
+- **Breaks** if the target is moved or deleted — a "dangling" link (see §2).
+
+#### 2. Hard links
+
+A **hard link** isn't a pointer at all — it's a **second name for the exact same
+data**. Every file's real bytes live in an *inode*; a hard link is another
+directory entry pointing at that **same inode**, so both names are equal owners
+of the data.
+
+Create it with **`ln TARGET LINKNAME`** (no `-s`). `ls -li` shows both names
+sharing **one inode number** (first column) and a link count of 2 — verified:
+
+```bash
+$ ln original.txt hardlink.txt
+$ ls -li
+48081761 -rw-r--r--  2 you staff  17 original.txt   # same inode ↓, link count 2
+48081761 -rw-r--r--  2 you staff  17 hardlink.txt
+```
+
+Properties:
+- Shares the **same inode/data** — a change through one name shows in the other.
+- **Survives deletion** of the original name: after `rm original.txt`,
+  `hardlink.txt` still holds the content (the data lives until *every* name is
+  gone). Verified.
+- Must be on the **same filesystem**, and normally **can't** link a directory.
+
+#### Symlink vs hard link at a glance
+
+| Aspect              | Symbolic (soft) link          | Hard link                 |
+|---------------------|-------------------------------|---------------------------|
+| Stores              | a **path** to the target      | the **same inode** (data) |
+| Create              | `ln -s target link`           | `ln target link`          |
+| `ls -l` shows       | `link -> target`, leading `l` | a normal-looking file     |
+| Cross-filesystem?   | **yes**                       | no                        |
+| Link a directory?   | **yes**                       | no (normally)             |
+| Target deleted →    | link **breaks** (dangling)    | data **survives**         |
+
+Symlinks are everywhere in DevOps; hard links mostly show up in backup snapshots
+and de-duplication.
+
+### Why symlinks are used
+
+Symlinks give you a **stable name that can point at a changing thing**:
+
+- **Zero-downtime deploys (the classic):** `/app/current -> /app/releases/2026-07-19`.
+  Deploy into a new dated folder, then just **repoint the link** — instant switch,
+  and rollback = point it back. (How Capistrano-style deploys work.)
+- **Shared libraries:** `libssl.so -> libssl.so.1.1` — programs use the stable
+  name while the real versioned file changes on upgrade.
+- **Enable/disable configs:** nginx's `sites-enabled/site -> sites-available/site`
+  — link it to enable, delete the link to disable; the real config stays put.
+- **Dotfiles in git:** `~/.bashrc -> ~/dotfiles/bashrc` — configs live in a repo
+  but still sit where the system expects them.
+
+#### The dangling-link gotcha
+
+A symlink only stores a *path*, so if the target moves or is deleted the link
+still exists but points at nothing:
+
+```bash
+$ ls -l broken_link
+lrwxr-xr-x  broken_link -> /nope/gone.txt   # link is fine...
+$ cat broken_link
+cat: broken_link: No such file or directory  # ...target is gone
+```
+
+For a broken link: `-L` is **true** (still a symlink) but `-e` is **false**
+(target missing) — a handy pair to detect them.
+
+> Contrast: a **hard link** (`ln` with **no** `-s`) is a second *name* for the
+> same underlying data, not a path pointer, so it doesn't break if the original
+> name is removed. Symlinks are far more common.
+
+### The Day 7 solution + the ordering bug
+
+Here's the version you wrote:
+
+```bash
+if [[ -f "$path" ]]; then
+    echo "it's regular file"
+elif [[ -d "$path" ]]; then
+    echo "it's directory"
+elif [[ -L "$path" ]]; then       # ⚠️ too late!
+    echo "it's a symlink"
+else
+    echo "file doesn't exist"
+fi
+```
+
+**The bug:** because `-f` follows a symlink to its target, a symlink pointing at
+a real file matches `-f` **first** and is reported as `"regular file"`. Your
+`-L` branch only ever runs for **broken** symlinks. Verified:
+
+| Path                    | Your order (`-f` first) | Correct (`-L` first) |
+|-------------------------|-------------------------|----------------------|
+| a regular file          | regular file ✅         | regular file ✅      |
+| a directory             | directory ✅            | directory ✅         |
+| **symlink → real file** | **regular file ❌**     | **symlink ✅**       |
+| broken symlink          | symlink ✅              | symlink ✅           |
+
+**The fix — check `-L` first**, since it's the only test that doesn't follow the
+link:
+
+```bash
+#!/bin/bash
+path=$1
+
+if [[ -L "$path" ]]; then          # check the LINK before following it
+    echo "it's a symlink"
+elif [[ -f "$path" ]]; then
+    echo "it's a regular file"
+elif [[ -d "$path" ]]; then
+    echo "it's a directory"
+elif [[ -e "$path" ]]; then        # exists but some other type (socket, etc.)
+    echo "it exists (special file)"
+else
+    echo "file doesn't exist"
+fi
+```
+
+Order matters whenever tests can overlap: put the **most specific / non-following**
+check (`-L`) first, general ones (`-e`) last. (File tests: §14; permissions
+behind them: §4.)
+
+#### Key takeaways
+- `-f`/`-d`/`-e` **follow** symlinks; `-L` inspects the **link itself**.
+- Therefore check **`-L` first**, or symlinks-to-files get mislabeled.
+- Broken symlink = `-L` true **and** `-e` false.
+- `ln -s TARGET LINK` makes one; `ls -l` shows `link -> target` with a leading `l`.
+
+---
+
+---
+
+<a id="t35"></a>
+
+## 35. Dates, timestamps & duration math
+
+[↑ Contents](#contents)
+
+### The `date` command basics
+
+`date` prints the current date and time. On its own it gives a long default:
+
+```bash
+$ date
+Sun Jul 19 02:03:09 IST 2026
+```
+
+The power comes from **`+FORMAT`** — a `+` followed by `%`-codes that pick
+*exactly* which pieces you want and how to arrange them:
+
+```bash
+$ date +%F
+2026-07-19
+$ date +%s
+1784406789
+```
+
+- Anything after `+` is a **format string**. `%`-codes get replaced with values;
+  everything else (dashes, spaces, colons) is printed literally.
+- Wrap it in quotes when your format has spaces: `date +"%F %T"`.
+
+### Format specifiers (the `%` codes)
+
+The ones you'll actually use:
+
+| Code | Means                        | Example output |
+|------|------------------------------|----------------|
+| `%F` | full date = `%Y-%m-%d`       | `2026-07-19`   |
+| `%s` | Unix timestamp (secs since 1970) | `1784406789` |
+| `%Y` | 4-digit year                 | `2026`         |
+| `%m` | month (01–12)                | `07`           |
+| `%d` | day of month (01–31)         | `19`           |
+| `%H` | hour (00–23)                 | `02`           |
+| `%M` | minute (00–59)               | `03`           |
+| `%S` | second (00–59)               | `09`           |
+| `%T` | full time = `%H:%M:%S`       | `02:03:09`     |
+| `%A` | weekday name                 | `Sunday`       |
+| `%B` | month name                   | `July`         |
+| `%Z` | timezone name                | `IST`          |
+| `%j` | day of year (001–366)        | `200`          |
+
+Mix them freely with literal text:
+
+```bash
+$ date +"%Y-%m-%d"                 # 2026-07-19   (same as %F)
+$ date +"%F %T"                    # 2026-07-19 02:03:09
+$ date +"%A, %B %d, %Y"            # Sunday, July 19, 2026
+$ date -u +"%F %T %Z"              # 2026-07-18 20:33:09 UTC   (-u = UTC)
+```
+
+> `-u` prints **UTC** instead of your local timezone — important on servers,
+> which usually run in UTC.
+
+### Command substitution: capturing the output
+
+This is the **real concept** of Day 6. `date` just *prints* — to actually *use*
+its value (store it, put it in a filename, build a message), wrap it in
+**`$( ... )`**, which runs the command and substitutes its output right there
+(§15):
+
+```bash
+today=$(date +%F)                  # store it in a variable
+echo "Today is $today"             # Today is 2026-07-19
+
+echo "Backup made at $(date +%T)"  # drop it straight into a string
+logfile="app-$(date +%F).log"      # app-2026-07-19.log
+```
+
+Without `$( )` you can only *see* the date; with `$( )` you can *use* it.
+
+### The Day 6 solution
+
+Task: print the current date as `YYYY-MM-DD` **and** the Unix timestamp.
+
+```bash
+#!/bin/bash
+echo "Date: $(date +%F)"          # Date: 2026-07-19
+echo "Timestamp: $(date +%s)"     # Timestamp: 1784406789
+```
+
+- `date +%F` → the date in `YYYY-MM-DD`.
+- `date +%s` → seconds since Jan 1, 1970 (the Unix timestamp).
+- `$( )` → command substitution drops each result into the echoed string.
+
+> ⚠️ The `awk 'BEGIN {srand(); print srand()}'` trick you first tried *does*
+> return the timestamp (srand with no arg seeds from the clock and returns the
+> previous seed), but it's an obscure hack, and it can't give you the `%F` date.
+> `date +%s` is the clear, correct tool.
+
+### Where you'll actually use `date` (DevOps)
+
+`date` shows up constantly in real scripts:
+
+```bash
+# Timestamped backup file (Day 36)
+tar -czf "backup-$(date +%F).tar.gz" /etc
+
+# Timestamped log line — a logging function (Day 20) leans on this
+echo "[$(date +'%F %T')] deploy started"
+
+# A unique, sortable filename
+report="report-$(date +%Y%m%d-%H%M%S).csv"   # report-20260719-020309.csv
+```
+
+`%F`-style names sort chronologically when listed, which is why timestamped
+filenames use `YYYY-MM-DD` order.
+
+### Date arithmetic ("yesterday", "2 days ago")
+
+Doing date math — "yesterday", "2 days ago", or converting a timestamp — uses the
+**`-d`** option with a human-readable phrase:
+
+| Goal                | Command                          |
+|---------------------|----------------------------------|
+| Yesterday's date    | `date -d "yesterday" +%F`        |
+| Tomorrow            | `date -d "tomorrow" +%F`         |
+| 2 days ago          | `date -d "2 days ago" +%F`       |
+| 1 hour ago          | `date -d "1 hour ago" +%T`       |
+| A specific date     | `date -d "2026-01-01" +%A`       |
+| Epoch → human date  | `date -d @1784406222`            |
+
+```bash
+date -d "yesterday" +%F          # the date 24h ago, as YYYY-MM-DD
+date -d "24 hours ago" +%s       # the Unix timestamp 24h ago (Day 30)
+date -d "2026-01-01" +%s         # convert a date string INTO a timestamp
+```
+
+> `-d` accepts flexible phrases: `"next friday"`, `"3 weeks ago"`,
+> `"2026-07-01 12:00"`. This is exactly what Day 30 (last-24-hours filter) and
+> Day 36 (timestamped backups) need — compute a cutoff with `+%s`, then compare
+> timestamps numerically.
+
+#### Key takeaways
+- `date +FORMAT` picks exactly the fields you want; `%F` = date, `%s` = timestamp.
+- **Capture** it with `$(date ...)` — that's the Day 6 concept, command substitution.
+- `-u` = UTC (servers usually run in UTC); quote formats containing spaces.
+- Date **math**: `date -d "yesterday"`, `date -d "2 days ago"`, `date -d @<epoch>`.
+
+---
+
+
+> Day 33 converts a number of seconds into `Xh Ym Zs`. The reusable idea is the
+> **divmod pattern**: split a big total into named units using **integer division
+> `/`** (how many whole units) and **modulo `%`** (what's left over). Concepts from
+> §17 applied inside a function (§2).
+
+### The divmod pattern
+
+To break a total into units you repeatedly ask two questions:
+- **`total / size`** → how many **whole** units fit? (integer division)
+- **`total % size`** → what's **left over** after removing them? (modulo)
+
+For seconds → hours/minutes/seconds (1h = 3600s, 1m = 60s):
+
+| Unit | How many whole | What's left for the next unit |
+|------|----------------|-------------------------------|
+| hours   | `total / 3600`        | `total % 3600` |
+| minutes | `(total % 3600) / 60` | `total % 60`   |
+| seconds | `total % 60`          | —              |
+
+Walk `3661` seconds through it:
+- hours   = `3661 / 3600` = **1**, leftover `3661 % 3600` = 61
+- minutes = `61 / 60`     = **1**, leftover `61 % 60` = 1
+- seconds = `3661 % 60`   = **1** → `1h 1m 1s` ✅
+
+> Remember: Bash `/` is **integer** division and `%` is the remainder (§17).
+> The same divmod idea converts bytes → KB/MB/GB, or a total into days/hours/etc.
+
+### The math, compactly
+
+```bash
+hours=$((   total / 3600 ))          # whole hours
+minutes=$(( (total % 3600) / 60 ))   # remaining seconds → whole minutes
+seconds=$(( total % 60 ))            # remaining seconds
+```
+- `total % 3600` = seconds left after removing whole hours; `/ 60` turns that into
+  minutes.
+- `total % 60` gives the final seconds directly (any full minute is a multiple of
+  60, so the remainder mod 60 is what's left).
+
+### The full Day 33 solution
+
+```bash
+#!/bin/bash
+
+# Convert a number of seconds into "Xh Ym Zs".
+format_duration() {
+    local total=$1
+    local hours=$((   total / 3600 ))
+    local minutes=$(( (total % 3600) / 60 ))
+    local seconds=$(( total % 60 ))
+    echo "${hours}h ${minutes}m ${seconds}s"
+}
+
+# validate: exactly one non-negative integer
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <seconds>" >&2
+    exit 1
+fi
+if ! [[ $1 =~ ^[0-9]+$ ]]; then
+    echo "Error: seconds must be a non-negative integer" >&2
+    exit 1
+fi
+
+format_duration "$1"
+```
+> Verified: `0`→`0h 0m 0s`, `90`→`0h 1m 30s`, `3661`→`1h 1m 1s`, `7325`→`2h 2m 5s`,
+> `90061`→`25h 1m 1s` (hours can exceed 24 — it's a duration, not a clock).
+
+- **`local`** the intermediate variables so they don't leak (§2).
+- The function `echo`s its result, so a caller can **capture** it:
+  `uptime_str=$(format_duration 7325)` (§2 "return data via echo").
+- Validate as a **non-negative** integer (`^[0-9]+$`, no `-?`) — negative seconds
+  make no sense for a duration (contrast Day 3, which allowed negatives).
+
+#### Key takeaways
+- **Divmod pattern:** `total / size` = whole units, `total % size` = remainder for
+  the next unit. Repeat down the units.
+- Seconds → h/m/s: `/3600`, `(%3600)/60`, `%60`.
+- Put it in a **function** that `echo`s the string so callers can capture it.
+- Validate as `^[0-9]+$` (non-negative); `local` the working variables.
+
+---
+
+<a id="t36"></a>
+
+## 36. Compression & archiving (`tar`, `gzip`, `zip`)
+
+[↑ Contents](#contents)
+
+Backups, log rotation, and shipping files all need this. Two **separate** ideas
+that often get combined:
+
+- **Archiving** = bundling many files into **one** file (`tar`). Doesn't shrink.
+- **Compression** = making a file **smaller** (`gzip`, `bzip2`, `xz`). One file at a time.
+
+`tar` does both when you add a compression flag — that's why `.tar.gz` exists
+(*archived* with tar, then *compressed* with gzip).
+
+### `tar` — the archiver you'll use most
+
+The flags read like a sentence: **c**reate / e**x**tract / lis**t**, **z**ipped,
+**f**ile named…
+
+```bash
+tar -czf backup.tar.gz /path/to/dir     # CREATE  a gzipped archive
+tar -tzf backup.tar.gz                   # LIST    contents (test/table — no extraction)
+tar -xzf backup.tar.gz                   # EXTRACT here
+tar -xzf backup.tar.gz -C /restore/dir   # EXTRACT into a specific dir (-C = change dir)
+```
+
+| Flag | Means |
+|------|-------|
+| `-c` | **c**reate an archive |
+| `-x` | e**x**tract an archive |
+| `-t` | lis**t** contents (great for checking before extracting) |
+| `-f` | the **f**ilename follows (**always needed**; keep it last of the bundle) |
+| `-z` | gzip compress/decompress (`.tar.gz` / `.tgz`) |
+| `-j` | bzip2 (`.tar.bz2`) |
+| `-J` | xz (`.tar.xz`) |
+| `-v` | **v**erbose — print each file as it's processed |
+| `-C DIR` | **c**hange to DIR first (where to extract to) |
+
+> **Memory hook:** *"**c**reate **z**ipped **f**ile"* = `-czf`, *"e**x**tract
+> **z**ipped **f**ile"* = `-xzf`, *"lis**t** **z**ipped **f**ile"* = `-tzf`.
+> Verified: create → list → extract round-trips correctly.
+
+**Useful extras:**
+```bash
+tar -tvf archive.tar.gz                       # verbose list: perms, size, date
+tar -xzf archive.tar.gz data/a.txt            # extract ONE file from the archive
+tar -czf out.tar.gz --exclude='*.log' dir/     # skip matching files
+tar -czf backup-$(date +%F).tar.gz /etc        # TIMESTAMPED backup (Day 36!)
+```
+
+### `gzip` / `gunzip` — compress a single file
+
+```bash
+gzip file.log            # → file.log.gz   (⚠️ REPLACES the original!)
+gunzip file.log.gz       # → file.log      (removes the .gz)
+gzip -k file.log         # -k = KEEP the original too
+gzip -d file.log.gz      # -d = decompress (same as gunzip)
+zcat file.log.gz         # view a .gz WITHOUT decompressing it
+zgrep "ERROR" file.log.gz # grep inside a .gz directly
+```
+> ⚠️ Plain `gzip` **deletes the original** and leaves only the `.gz` — verified.
+> Use `-k` if you need to keep both. `zcat`/`zgrep`/`zless` are gold for reading
+> rotated logs without unpacking them (Day 44).
+
+### `zip` / `unzip` — cross-platform archives
+
+```bash
+zip -r archive.zip dir/    # -r = recursive (needed for directories)
+unzip archive.zip          # extract here
+unzip -l archive.zip       # LIST contents without extracting
+unzip archive.zip -d /dir  # extract into a directory
+```
+`zip` both archives *and* compresses in one step (unlike tar+gzip). It's the
+Windows-friendly format; on Linux, `.tar.gz` is the convention.
+
+### Which compression? (verified sizes on the same data)
+
+| Format | tar flag | Speed | Compression | Use when |
+|--------|----------|-------|-------------|----------|
+| **gzip** (`.gz`) | `-z` | fast | good | **the default** — backups, logs |
+| **bzip2** (`.bz2`) | `-j` | slow | better | archival where size matters |
+| **xz** (`.xz`) | `-J` | slowest | **best** | distributing large files |
+
+> On a tiny sample: xz 584B < gzip 636B < bzip2 695B. On real data the ordering is
+> usually xz < bzip2 < gzip for size, and the reverse for speed. **Stick with gzip
+> (`-z`)** unless you have a reason not to — it's fast and universally available.
+
+### Day 36's backup pattern (preview)
+
+```bash
+tar -czf "/backups/backup-$(date +%F).tar.gz" /var/www     # timestamped archive
+find /backups -name "*.tar.gz" -mtime +7 -delete            # prune older than 7 days
+```
+That's the whole Day 36 exercise: `tar -czf` with a `$(date +%F)` filename
+(Day 6 command substitution), plus `find -mtime +7 -delete` (§33) to
+clean up old backups.
+
+---
+
+<a id="t37"></a>
+
+## 37. Processes, signals & background jobs
+
+[↑ Contents](#contents)
+
+A running program is a **process**, identified by a **PID** (process ID).
+
+```bash
+ps aux              # every process (user, PID, CPU, MEM, command)
+ps aux | grep nginx # find a specific process
+top                 # live, sorted view (q to quit)
+echo $$             # the PID of your current shell
+pgrep nginx         # just the PIDs matching a name
+```
+
+**Signals** — how you tell a process to do something (usually stop):
+
+| Signal | Number | Meaning |
+|--------|--------|---------|
+| `SIGHUP`  | 1  | terminal closed / reload config |
+| `SIGINT`  | 2  | **Ctrl-C** — interrupt |
+| `SIGKILL` | 9  | **force kill** — can't be caught or ignored |
+| `SIGTERM` | 15 | **graceful stop** (the default `kill` sends this) |
+
+```bash
+kill 1234           # send SIGTERM (ask nicely) to PID 1234
+kill -9 1234        # send SIGKILL (force) — last resort
+pkill nginx         # kill by name
+```
+> **Prefer `SIGTERM` (plain `kill`)** so the program can clean up; use `-9` only
+> when it won't die. `trap` (Day 38) lets *your* script catch signals to clean up
+> on exit — e.g. remove a temp dir on Ctrl-C.
+
+**Background jobs** — run something without blocking the shell:
+
+```bash
+long_task &          # & runs it in the BACKGROUND; shell continues
+jobs                 # list background jobs
+wait                 # wait for all background jobs to finish
+nohup long_task &    # keep running even after you log out
+```
+Verified: a `&` job runs while the main script continues, and `wait` blocks until
+it's done. This is the basis of Day 46 (parallel pings) and Day 57 (process
+monitoring).
+
+---
+
+<a id="t38"></a>
+
+## 38. Users — `id`, `/etc/passwd`, `/etc/shadow`
+
+[↑ Contents](#contents)
+
+### The `id` command & command-exit-status conditionals
+
+`id` looks a user up in the system's **account database** and prints their
+numeric IDs and group memberships:
+
+```bash
+$ id
+uid=501(admin) gid=20(staff) groups=20(staff),80(admin),...
+$ id root
+uid=0(root) gid=0(wheel) groups=0(wheel),...
+```
+
+Handy variants (pull out just one piece):
+
+| Command   | Prints                        | Example  |
+|-----------|-------------------------------|----------|
+| `id`      | everything for the current user | `uid=501(admin)...` |
+| `id NAME` | everything for that user      | `id root`   |
+| `id -u`   | just the **UID** (number)     | `501`    |
+| `id -un`  | just the **username**         | `admin`  |
+| `id -g`   | primary **group ID**          | `20`     |
+| `id -gn`  | primary **group name**        | `staff`  |
+| `id -Gn`  | **all** group names           | `staff everyone ...` |
+
+#### Why `id` is used to check if a user exists
+
+The **whole trick** of Day 9 is `id`'s **exit code**:
+
+- User **exists** → `id` prints their info and exits **`0`** (success).
+- User **missing** → `id` prints `no such user` to stderr and exits **non-zero**.
+
+So you drop the command straight into an `if` — no `[[ ]]` needed — and silence
+its output (§25) because you only care about success/failure, not the text:
+
+```bash
+if id "$user" &>/dev/null; then
+    echo "user exists"
+else
+    echo "user does not exist"
+fi
+```
+
+This is the Day 9 concept: **a command's exit status IS the condition.** `0` =
+true/success, non-zero = false/failure. (Contrast: `[[ ]]` is itself just a
+command that exits 0/1.)
+
+> Why `id` and not `grep /etc/passwd`? `id` consults **all** account sources (the
+> local file *and* network directories like LDAP/Active Directory), so it finds
+> users that aren't in the local file. On Linux, `getent passwd "$user"` is
+> another exit-code-friendly way that also queries those network sources.
+
+### Where Linux users live: `/etc/passwd`
+
+Every account on a Linux system has a line in **`/etc/passwd`**. It's a plain
+text file, **readable by everyone** (many programs need to map UID numbers to
+names). Each line has **7 colon-separated fields**:
+
+```
+mahima:x:1000:1000:Mahima K:/home/mahima:/bin/bash
+   │   │   │    │      │          │           │
+   │   │   │    │      │          │           └─ 7. login shell
+   │   │   │    │      │          └───────────── 6. home directory
+   │   │   │    │      └──────────────────────── 5. GECOS (full name/comment)
+   │   │   │    └─────────────────────────────── 4. primary group ID (GID)
+   │   │   └──────────────────────────────────── 3. user ID (UID)
+   │   └──────────────────────────────────────── 2. password placeholder
+   └──────────────────────────────────────────── 1. username
+```
+
+| # | Field    | Meaning                                                      |
+|---|----------|--------------------------------------------------------------|
+| 1 | username | login name                                                   |
+| 2 | password | just **`x`** = "the real hash lives in `/etc/shadow`" (§3)    |
+| 3 | UID      | numeric user ID — **`0` = root**, 1–999 = system, 1000+ = people |
+| 4 | GID      | numeric primary group ID                                     |
+| 5 | GECOS    | comment: full name, phone, etc.                              |
+| 6 | home     | home directory (`/home/mahima`)                              |
+| 7 | shell    | login shell; **`/usr/sbin/nologin`** or `/bin/false` = can't log in |
+
+- **UID 0 is root** — that's what actually defines the superuser, not the name.
+- Service accounts (nginx, postgres) use `nologin` as the shell so nobody can log
+  in as them — a security practice.
+
+```bash
+grep "^mahima:" /etc/passwd     # look up one user's line
+cut -d: -f1 /etc/passwd         # list all usernames (field 1, ":" separator)
+```
+
+### Where passwords live: `/etc/shadow`
+
+Notice field 2 of `/etc/passwd` is just `x`, not the actual password. The real
+**hashed passwords** live in **`/etc/shadow`** — and this is a deliberate
+security split:
+
+- `/etc/passwd` **must be world-readable** (programs map UIDs↔names constantly).
+- If password hashes sat in that readable file, **any user could copy them and
+  crack them offline**. So the hashes were moved to `/etc/shadow`, which is
+  **readable only by root** (`-rw-r----- root shadow`).
+
+`/etc/shadow` has **9 colon-separated fields** (most are password-aging policy):
+
+```
+mahima:$6$Xy9z$abc123...:19700:0:99999:7:::
+```
+
+| # | Field           | Meaning                                              |
+|---|-----------------|------------------------------------------------------|
+| 1 | username        | matches `/etc/passwd`                                 |
+| 2 | **hashed password** | the algorithm + salt + hash (see below)          |
+| 3 | last change     | days since 1970 the password was last changed        |
+| 4 | min age         | min days before it *can* be changed again            |
+| 5 | max age         | max days before it *must* be changed (aging)         |
+| 6 | warn            | days of warning before expiry                        |
+| 7 | inactive        | grace days after expiry before the account locks     |
+| 8 | expire          | date (days since 1970) the account fully expires     |
+| 9 | reserved        | unused                                               |
+
+The **hash field** (field 2) encodes the algorithm as `$id$salt$hash`:
+
+| Value        | Meaning                                     |
+|--------------|---------------------------------------------|
+| `$6$...`     | SHA-512 hash (common modern default)        |
+| `$y$...`     | yescrypt (newer default on some distros)    |
+| `*` or `!`   | **login disabled / no valid password**      |
+| `!` prefix   | account **locked** (e.g. `!$6$...`)         |
+| (empty)      | **no password** — dangerous                 |
+
+- Passwords are **hashed, not encrypted** — the system never stores the real
+  password, only a one-way hash it re-computes at login to compare.
+- You never edit `/etc/shadow` by hand — use `passwd`, `chage`, `usermod`.
+
+### The Day 9 solution
+
+```bash
+#!/bin/bash
+user=$1
+
+# 1. Require exactly one argument
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <username>" >&2
+    exit 1
+fi
+
+# 2. Sanity-check the username format (defensive; id would also reject junk)
+if ! [[ $user =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+    echo "Error: '$user' is not a valid username" >&2
+    exit 1
+fi
+
+# 3. The real check — id's EXIT CODE tells us if the user exists
+if id "$user" &>/dev/null; then
+    echo "user exists"
+else
+    echo "user does not exist"
+fi
+```
+
+- The `id ... &>/dev/null` line is the heart of it — command exit status as the
+  condition (§1), output silenced with `&>/dev/null` (§25).
+- Errors go to **stderr** (`>&2`) with `exit 1` (§25).
+- Username regex `^[a-zA-Z_][a-zA-Z0-9_-]*$`: start with a letter/underscore, then
+  letters/digits/`_`/`-` — real usernames don't start with a digit or `-`.
+
+#### Key takeaways
+- `id NAME` → exit `0` if the user exists, non-zero if not; use it **as** the `if`
+  condition, silenced with `&>/dev/null`.
+- `/etc/passwd` = the user list (7 fields, world-readable); **UID 0 = root**;
+  field 2 is just `x`.
+- `/etc/shadow` = the password **hashes** (root-only), split off from passwd for
+  security; hashes are one-way, formatted `$id$salt$hash`.
+
+---
+
+---
+
+<a id="t39"></a>
+
+## 39. Environment variables, `export` & `$PATH`
+
+[↑ Contents](#contents)
+
+A **variable** you set is local to your shell. **`export`** promotes it to an
+**environment variable** that child processes (and scripts you run) inherit:
+
+```bash
+name="Mahima"                 # shell variable — only THIS shell sees it
+export API_URL="http://..."   # environment variable — child processes inherit it
+```
+(This is the subshell inheritance from Day 1: exported vars flow **down** to
+children, never back **up**.)
+
+**Common environment variables:**
+
+| Variable | Holds |
+|----------|-------|
+| `$HOME`  | your home directory (`/home/you`) |
+| `$USER`  | your username |
+| `$PATH`  | the list of directories the shell searches for commands |
+| `$PWD`   | current directory |
+| `$SHELL` | your login shell |
+
+**`$PATH` — how the shell finds commands.** When you type `ls`, the shell looks
+through each colon-separated directory in `$PATH` until it finds an executable
+named `ls`:
+```bash
+echo "$PATH"          # /usr/local/bin:/usr/bin:/bin:...
+which ls              # /bin/ls  — which dir it was found in
+```
+- Put your own scripts in a `$PATH` dir (or add one: `export PATH="$HOME/bin:$PATH"`)
+  to run them by name without `./`.
+- `env` prints all environment variables; `printenv VAR` prints one.
+- Day 41 (reading a `.env` file) is about loading variables like these safely.
+
+---
+
+<a id="t40"></a>
+
+## 40. Finding & installing tools
+
+[↑ Contents](#contents)
+
+**Is a command available?** (Day 49 prerequisite checks):
+```bash
+command -v jq >/dev/null || echo "jq not installed" >&2   # the portable check
+which jq          # path if found
+type jq           # is it a builtin, alias, function, or program?
+```
+`command -v` is the one to use in scripts — it's built-in and returns non-zero if
+the command is missing, so it drops into an `if` (Day 49).
+
+**Installing tools** (Linux package managers differ by distro):
+
+| Distro family | Install command |
+|---------------|-----------------|
+| Debian/Ubuntu | `apt install <pkg>` (or `apt-get`) |
+| RHEL/CentOS/Fedora | `yum install <pkg>` / `dnf install <pkg>` |
+| Alpine | `apk add <pkg>` |
+
+> A robust script **checks for its dependencies first** (`command -v`) and fails
+> fast with a clear message if something's missing (Day 49), rather than crashing
+> halfway through.
+
+---
+
+# Part VI — Real-world DevOps
+
+> Where all of the above gets used on the job.
+
+<a id="t41"></a>
+
+## 41. Networking essentials
+
+[↑ Contents](#contents)
+
+Scripts constantly check "is this host up? is this service responding?" — so know
+the vocabulary:
+
+**IP address** — a machine's address on a network. IPv4 = four numbers 0–255
+(`192.168.1.10`, Day 32). Special ones:
+
+| Address | Means |
+|---------|-------|
+| `127.0.0.1` / `localhost` | **this machine** (loopback) |
+| `0.0.0.0` | "all interfaces" — bind here to accept connections from anywhere (Day 25) |
+| `10.x` / `172.16–31.x` / `192.168.x` | **private** networks (internal) |
+
+**Port** — a numbered "door" on a host for a specific service. `IP:port`
+identifies an endpoint (`127.0.0.1:8080`). Common ports:
+
+| Port | Service |
+|------|---------|
+| 22   | SSH |
+| 80   | HTTP |
+| 443  | HTTPS |
+| 5432 | PostgreSQL |
+| 6379 | Redis |
+| 3306 | MySQL |
+
+**DNS / hostnames** — names (`google.com`) resolve to IPs via DNS. `ping`/`curl`
+resolve the name first (Day 34).
+
+**HTTP status codes** — what a web server replies (Day 40 health checks):
+
+| Code | Meaning |
+|------|---------|
+| `2xx` (200) | **success** |
+| `3xx` (301/302) | redirect |
+| `4xx` (404, 401) | **client error** (not found, unauthorized) |
+| `5xx` (500, 503) | **server error** |
+
+**`curl` — the tool for talking to HTTP endpoints** (Day 40):
+
+```bash
+curl https://example.com                          # fetch a URL
+curl -s -o /dev/null -w '%{http_code}' URL         # print JUST the status code
+curl -sf URL || echo "endpoint down"               # -f = fail on 4xx/5xx
+```
+Verified: `curl -s -o /dev/null -w '%{http_code}' https://example.com` → `200`.
+- `-s` silent, `-o /dev/null` discard the body, `-w '%{http_code}'` print the code.
+- **TCP vs UDP:** TCP = reliable, connection-based (HTTP, SSH); UDP = fast,
+  fire-and-forget (DNS, some streaming). You mostly meet TCP.
+- Related tools: `wget` (download), `ss -tlnp` / `netstat` (what's listening),
+  `dig`/`nslookup` (DNS lookups), `nc`/`telnet host port` (test a port).
+
+
+Tier 2 dips into networking and cluster tooling. What you need to know:
+
+#### IPv4 addresses (Day 32)
+- Format: **four numbers (octets) 0–255**, dot-separated: `192.168.1.10`.
+- Validating means: 4 groups of digits, **each ≤ 255** — a regex alone isn't
+  enough (regex can match `999`); you also check each octet's value with
+  `BASH_REMATCH` (§18) capturing the four parts.
+
+#### `ping` — is a host reachable? (Day 34)
+
+`ping` sends an **ICMP echo request** to a host and waits for a reply — the
+classic "is this host up / can I reach it?" test. In scripts you almost never
+care about its *output*, only its **exit code**.
+
+```bash
+ping -c 1 host          # send ONE packet and stop
+```
+
+**Essential flags:**
+
+| Flag | Meaning | Why it matters in a script |
+|------|---------|----------------------------|
+| `-c N` | send **N** packets, then stop | **Required** — without `-c`, ping runs **forever** and your script hangs |
+| `-W S` | wait up to **S seconds** for a reply (Linux) | so an unreachable host doesn't stall the loop |
+| `-i S` | **interval** of S seconds between packets | slow down repeated pings |
+| `-q`   | **quiet** — print only the summary | less noise if you *do* want output |
+| `-s N` | packet **size** in bytes | rarely needed |
+
+So the script-safe form is **`ping -c 1 -W 1 host`** = *"one packet, give up after
+1 second."*
+
+**Exit code is what you check** (verified):
+
+| Exit | Meaning |
+|------|---------|
+| `0`  | a reply came back → **reachable** |
+| non-zero | no reply / error → **not reachable** |
+
+Because it's an exit-code test, `ping` drops straight into an `if` (like `id`
+Day 9, `systemctl` Day 12) — silence the output with `&>/dev/null`:
+
+```bash
+if ping -c 1 -W 1 "$host" &>/dev/null; then
+    echo "$host is reachable"
+else
+    echo "$host is not reachable"
+fi
+```
+
+**The Day 34 pattern** — read hosts from a file, ping each:
+
+```bash
+while IFS= read -r host; do
+    [[ -z "$host" ]] && continue                 # skip blank lines
+    if ping -c 1 -W 1 "$host" &>/dev/null; then
+        echo "$host is reachable"
+    else
+        echo "$host is not reachable"
+    fi
+done < "$file"
+```
+> Reads the file **line by line** (§8) — *not* `for h in $file` (that loops over
+> the filename!). Each ping is an exit-code check. Verified: `127.0.0.1` → exit 0
+> (reachable), an unreachable IP → non-zero.
+
+**Gotchas:**
+- **No `-c` = infinite ping.** In a script you *must* bound it with `-c` (and
+  ideally `-W`), or it never returns.
+- **"No ping reply" ≠ "host is down."** Many firewalls **block ICMP**, so a
+  reachable server can still fail ping. ping tests ICMP reachability, not whether
+  a *service* is up — for that, check the actual port/endpoint (Day 40 uses
+  `curl` for HTTP health).
+- **Don't check `$?` after a pipe.** `ping ... | tail` gives you *tail's* exit
+  code, not ping's (the `PIPESTATUS` trap — Day 55). Check ping's exit directly,
+  or use it as the `if` condition.
+
+#### `find` (Days 17, 31, 36) — searching the filesystem
+`find` locates files by name/type/size/age and can run a command on each. It gets
+its own full deep-dive in **§12** — see there.
+
+#### `kubectl` (Day 28) — Kubernetes CLI
+```bash
+kubectl get ns                  # list namespaces
+kubectl get pods -n <namespace> # pods in a namespace
+```
+> ⚠️ The output has a **header row** (`NAME  STATUS ...`) — skip it when looping
+> (`tail -n +2`, or `--no-headers`). You need a real cluster to run this; it's
+> about **parsing command output** (Day 28), the skill that matters.
+
+#### `seq` and date math (Days 29, 30)
+- `seq 1 "$N"` → generate `1..N` for a counted retry loop (Day 29).
+- Date arithmetic for "last 24 hours" (Day 30): `date -d '24 hours ago' +%s`
+  (§35). Compare Unix timestamps (`+%s`) numerically.
+
+---
+
+<a id="t42"></a>
+
+## 42. Data formats — JSON, YAML, CSV
+
+[↑ Contents](#contents)
+
+DevOps scripts constantly read structured data. Recognise these:
+
+- **JSON** — APIs and `kubectl -o json` output. Parse it with **`jq`** (Day 42),
+  never with grep/awk:
+  ```bash
+  echo '{"name":"web","replicas":3}' | jq '.replicas'    # 3
+  kubectl get pods -o json | jq -r '.items[].metadata.name'
+  ```
+- **YAML** — Kubernetes manifests, CI configs, Ansible. Indentation-based; `${VAR}`
+  placeholders are common (Day 47 templating with `envsubst`).
+- **CSV** — comma-separated tables. Slice with `cut -d,` or `awk -F,` (Day 24).
+
+> Rule: for JSON, **use `jq`** (it understands structure); for flat CSV/columns,
+> `cut`/`awk` are fine. Don't try to parse JSON with regex — nested structures
+> break it.
+
+---
+
+<a id="t43"></a>
+
+## 43. Production habits & checklist
+
+[↑ Contents](#contents)
+
+- **Quote everything:** `"$var"`, `"$@"`, `"$f"` — globs and spaces bite hardest
+  in loops (Day 10).
+- **Guard no-match globs:** `for f in *.log` can yield the literal `*.log`
+  (Section 1).
+- **Validate + fail fast:** arg checks, `>&2`, `exit 1` — the Tier 1 habit still
+  applies (Days 8, 9, 14).
+- **`local` in functions** to avoid leaking variables (Section 2).
+- **Prefer parameter expansion** over spawning `basename`/`dirname`/`cut` when
+  you're just slicing one string (Section 9) — fewer processes, faster.
+- **`while IFS= read -r`**, never `for line in $(cat)` (Section 8).
+- **Preview destructive commands first:** run `sed`/`find` *without* `-i`/`-delete`
+  to see what they'd affect, then add the flag once the output looks right.
+
+#### Tier 2 key takeaways
+- `for` for lists/globs/ranges, `while` for conditions and reading files.
+- Functions return **status** via `return`/exit code, **data** via `echo` + `$( )`.
+- `grep` finds, `cut` slices columns, `awk` does field logic/math, `sed` edits.
+- `sort | uniq -c | sort -rn` = count-by-frequency; `uniq` needs a `sort` first.
+- `${##}`/`${%%}` slice paths; `getopts` parses real flags; quote everything.
+
+---
+
+
+- Terminal = window, **shell** = engine, **Bash** = one engine. A script is just
+  typed commands saved in a file.
+- Master `cd ls pwd cat grep find` and pipes `|` **before** scripting.
+- `rwx` = 4/2/1; `chmod +x` is what lets `./script.sh` run.
+- The shebang `#!/bin/bash` must be **line 1**.
+- **Quote your variables:** `"$var"` and `"${arr[@]}"`.
+- Three streams: stdin(0), stdout(1), stderr(2); redirect with `> >> 2> &>`.
+  **`tee`** = screen + file; **`exec > log 2>&1`** = whole script; **`<(cmd)`** =
+  output-as-a-file. Full guide in **§19**.
+- **Exit codes:** 0 = success; `$?` = last code; chain with `&&`/`||`.
+- **`export`** makes a var inherit into child processes; `$PATH` is where commands
+  are found.
+- **Processes** have PIDs; `kill` sends **SIGTERM** (graceful), `-9` = SIGKILL (force).
+- **Networking:** IP\:port, `localhost`=127.0.0.1, `0.0.0.0`=all; HTTP 2xx/4xx/5xx;
+  `curl -s -o /dev/null -w '%{http_code}'` for health checks.
+- **Arrays:** `"${arr[@]}"` (all), `${#arr[@]}` (count); `declare -A` for maps (bash 4+).
+- Parse **JSON with `jq`**; CSV with `cut`/`awk`. Check tools with `command -v`.
+- **Archiving:** `tar -czf` create, `-xzf` extract, `-tzf` list; `gzip` compresses
+  one file (`-k` to keep the original); `zcat`/`zgrep` read `.gz` without unpacking.
+- Look things up with `man`; debug with `bash -x`; lint with `shellcheck`.
+
+---
+
+---
+
+# Appendix — orientation notes from the original day-by-day file
+
+*Kept for completeness: the framing notes that introduced each tier in*
+*`learnings.md`. They describe the practice-day sequence rather than a topic.*
+
+## Tier 2 pre-flight (Days 16–35)
+
+> Read this **before** starting Day 16. Tier 1 was about single decisions
+> (`if`, `case`, one command). Tier 2 is about **doing things repeatedly** (loops),
+> **packaging reusable logic** (functions), and **slicing text** (`grep`/`sed`/`awk`)
+> — the actual day-job of a DevOps engineer. You don't need to master all of it
+> now; skim it, then come back to each section as its day arrives.

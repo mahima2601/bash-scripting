@@ -2,6 +2,11 @@
 
 A running log of what I learn each day. One section per day.
 The actual code for each day lives in `N_day.sh`; this file is the *theory*.
+
+> 📖 **Revising, not journalling?** Read [`linux_bash.md`](linux_bash.md) instead
+> — the same material reorganised **by topic** (43 numbered topics in 6 parts,
+> with a table of contents). This file stays as the chronological log; that one
+> is the reference.
 **Day 0** below is the foundations primer — everything worth knowing *before*
 writing your first script.
 
@@ -3638,6 +3643,85 @@ awk '$2 > 28 {print $1}' file  # pattern can be a COMPARISON on a field
 - **Action** in `{ }` decides *what to do*. Default action is `print $0`.
 - Verified: `awk '$2 > 28 {print $1}'` printed the people older than 28.
 
+#### Choosing lines: `NR`, ranges, regex, and `NF`
+
+The **pattern** slot accepts far more than a regex. These are the selectors you'll
+reach for constantly:
+
+```bash
+awk 'NR == 6'                file   # ONE specific line (line 6)
+awk 'NR == 3, NR == 6'       file   # a RANGE of lines, 3 through 6 (inclusive)
+awk 'NR > 1'                 file   # skip the header row
+awk '/Raju/'                 file   # lines containing "Raju"
+awk '/Raju|Alex|Sham/'       file   # ANY of several words — | means OR
+awk '!/DEBUG/'               file   # lines NOT matching (! negates)
+awk 'NF == 0 {print NR}'     file   # find EMPTY lines (zero fields)
+awk 'NF'                     file   # print only NON-empty lines (NF is 0 = false)
+```
+
+> ✅ Verified: `NR==2, NR==4` printed exactly lines 2–4; `NF==0` correctly
+> reported the one blank line; `/Raju|Alex/` matched both names.
+
+The range form `NR==3, NR==6` is a **range pattern** — it switches "on" at the
+first match and "off" at the second. It works with regexes too:
+`awk '/START/,/END/'` prints everything between two markers.
+
+That last one-liner deserves a note: **`awk 'NF'`** works because awk treats `0`
+as false and any non-zero number as true. A blank line has `NF == 0` → false →
+not printed. It's the shortest way to strip blank lines.
+
+#### Matching inside one field: `~` and `!~`
+
+`/regex/` on its own searches the **whole line**. To search a **specific field**,
+use the match operator `~`:
+
+```bash
+awk '$2 ~ /^A/'      file   # field 2 STARTS WITH "A"
+awk '$2 !~ /a/'      file   # field 2 does NOT contain "a"
+awk '$3 == "Loan"'   file   # field 3 EXACTLY equals "Loan"  (== not ~)
+```
+
+| Operator | Means                          |
+|----------|--------------------------------|
+| `~`      | field **matches** the regex    |
+| `!~`     | field does **not** match       |
+| `==`     | field is **exactly** equal (string or number) |
+
+> ✅ Verified: `$2 ~ /a/` matched Raju/Paul/Sham; `$2 !~ /a/` returned Alex.
+
+##### ⚠️ Numbers vs strings — a real trap
+
+awk compares **numerically** if both sides look like numbers, but
+**alphabetically** if either side is quoted:
+
+```bash
+awk '$1 > 5'     nums.txt   # numeric  → matches 10 and 9  ✅
+awk '$1 > "5"'   nums.txt   # STRING   → matches only 9    ❌
+```
+> ✅ Verified — with quotes, `"10"` sorts *before* `"5"` alphabetically, so line
+> `10` is skipped. **Don't quote numbers you want compared as numbers.**
+
+Alphabetical comparison is genuinely useful for **timestamps**, though, because
+`HH:MM:SS` sorts correctly as text:
+
+```bash
+awk '$3 >= "15:55:55" && $3 <= "15:55:56"' /var/log/messages   # log time window
+```
+> ✅ Verified on a sample log — returned exactly the two lines in the window.
+
+##### Case-insensitive matching
+
+```bash
+awk 'tolower($0) ~ /raju/' file        # ✅ PORTABLE — works in every awk
+awk 'BEGIN{IGNORECASE=1} /raju/' file  # ⚠️ gawk ONLY
+```
+
+> ⚠️ **`IGNORECASE` is a gawk extension, not standard awk.** On RHEL/Fedora/Amazon
+> Linux `awk` *is* gawk so it works — but **Debian and Ubuntu ship `mawk` by
+> default**, where it silently does nothing and you get **zero matches with no
+> error**. Verified here on a non-gawk awk: no output, no warning. Use the
+> `tolower()` form in anything portable.
+
 #### Custom delimiter with `-F`
 
 By default fields split on whitespace. `-F` sets a different separator — essential
@@ -3650,6 +3734,32 @@ awk -F: '{print $1}' /etc/passwd       # colon-separated → usernames
 > Verified: `awk -F, '{print $1, $3}'` on `alice,30,NYC` → `alice NYC`.
 > Note: `print $1, $3` (comma) puts a space between them; `print $1 $3` (no comma)
 > jams them together.
+
+##### Several delimiters at once
+
+`-F` accepts a **regex**, so a character class `[...]` splits on *any* of the
+listed characters — perfect for messy files mixing commas and colons:
+
+```bash
+awk -F'[,:]'   '{print $2}' multi.txt    # split on comma OR colon
+awk -F'[,:; ]' '{print $1}' messy.txt    # comma, colon, semicolon OR space
+awk -F'\t'     '{print $2}' data.tsv     # tab-separated
+```
+> ✅ Verified: `-F'[,:]'` on `a,b:c` → field 2 is `b`; on `d:e,f` → `e`.
+
+##### `OFS` — the **output** separator
+
+`-F` sets the **input** separator. The **output** separator is `OFS` (default: a
+single space). It only kicks in when awk **rebuilds** `$0` — which happens the
+moment you assign to any field:
+
+```bash
+awk -F, '{$2="CHANGED"; print $0}'                <<< "a,b,c"   # → a CHANGED c
+awk -F, 'BEGIN{OFS="|"} {$2="CHANGED"; print $0}' <<< "a,b,c"   # → a|CHANGED|c
+```
+> ⚠️ Verified: reading a CSV with `-F,` and modifying a field gives you
+> **space-separated** output, silently destroying the CSV format. Set
+> `BEGIN{OFS=","}` (or `-v OFS=,`) whenever you edit fields and want the format kept.
 
 #### `BEGIN` and `END` — run once, before/after everything
 
@@ -3731,6 +3841,131 @@ Then the **`END`** block walks every key and prints the tally:
 > (Day 53), requests per IP, errors per host. It's one of the most powerful
 > one-liners in all of shell.
 
+#### `if / else` — logic inside the action
+
+You can filter with a pattern *or* branch inside the action. Use `if/else` when
+you want to do something **different** per line rather than skip lines:
+
+```bash
+# Label each row High/Low based on salary (field 5)
+awk 'NR>1 && NF {if ($5 > 50000) label="High"; else label="Low"; print $2, $5, label}' sample.txt
+```
+```
+Raju 45000 Low
+Paul 65000 High
+Alex 52000 High
+Sham 38000 Low
+```
+> ✅ Verified. `else if` chains work too, exactly like C.
+
+**Conditional totals** — sum only the rows that qualify:
+
+```bash
+awk '$3=="Loan" {sum += $5} END {print "Loan total:", sum}' sample.txt   # → 97000
+```
+Here the *pattern* does the filtering, which is simpler than an `if` inside the
+block. Both work — prefer the pattern when you're just selecting lines.
+
+**Track a running maximum** (longest line in a file):
+
+```bash
+awk '{if (length($0) > max) {max=length($0); line=$0}} END {print max": "line}' file
+```
+> ✅ Verified → `25: 2 Paul Sales Mumbai 65000`. Same shape as `sum +=` — a
+> variable that survives between lines, reported in `END`.
+
+#### Built-in functions
+
+awk ships with string functions you'd otherwise need `sed`/`tr` for:
+
+| Function | Does | Example |
+|----------|------|---------|
+| `length(s)` | character count (no arg = `length($0)`) | `length($2)` → `4` |
+| `toupper(s)` / `tolower(s)` | change case | `toupper($2)` → `RAJU` |
+| `index(s, t)` | position of `t` inside `s`, **1-based**, `0` if absent | `index($0,"Paul")` → `3` |
+| `substr(s, start, len)` | extract part of a string | `substr($2,1,3)` → `Raj` |
+| `split(s, arr, sep)` | split a string into an array; returns the count | `split($1,a,"-")` |
+| `gsub(re, new)` | **g**lobal **sub**stitute; returns how many it replaced | `gsub("Raju","Raja")` |
+| `sub(re, new)` | same but only the **first** match per line | `sub(/error/,"ERR")` |
+
+```bash
+awk '{print $2, length($2)}'          sample.txt   # word + its length
+awk '{print NR, index($0, "Paul")}'   sample.txt   # where "Paul" starts (0 = not on this line)
+awk 'NR==2 {print toupper($2)}'       sample.txt   # → RAJU
+awk '{gsub("Raju","Raja"); print $0}' sample.txt   # replace, then print the edited line
+```
+> ✅ All verified. Two things about **`gsub`** that surprise people:
+> 1. It **edits in place** and returns a *count*, not the new string. So you call
+>    it as a statement, then `print $0` — don't write `print gsub(...)`.
+> 2. It defaults to operating on `$0`. Give it a third argument to target one
+>    field: `gsub("a","A",$2)`.
+
+#### Loops
+
+Three forms, all usable in `BEGIN`, `END`, or the main block:
+
+```bash
+awk 'BEGIN {for (i=1; i<=3; i++) printf "%d ", i}'          # C-style  → 1 2 3
+awk 'BEGIN {n=1; while (n<=3) {printf "%d ", n; n++}}'      # while    → 1 2 3
+awk 'BEGIN {m["Math"]=40; for (s in m) print s, m[s]}'      # for-in over an array
+```
+> ⚠️ **`for (k in arr)` gives no guaranteed order** — awk uses a hash internally.
+> Verified: keys came back `English` then `Math`, not insertion order. Pipe
+> through `sort` if order matters: `awk '…' | sort -k2 -rn`.
+
+Arrays come in both flavours, and you never declare them:
+
+```bash
+awk 'BEGIN {a[1]="x"; a[2]="y"; for (i=1;i<=2;i++) print i, a[i]}'   # indexed
+awk 'BEGIN {marks["Math"]=40; marks["English"]=50}'                   # associative
+```
+Under the hood awk keys are **always strings** — `a[1]` and `a["1"]` are the same
+slot. Indexed arrays are just associative arrays with numeric-looking keys.
+
+#### Custom functions
+
+For logic you reuse, define your own with `function`:
+
+```bash
+awk 'function add(x, y) { return x + y }
+     BEGIN { print "3+4 =", add(3,4) }'          # → 3+4 = 7
+```
+> ✅ Verified. Two rules worth knowing: arrays are passed **by reference**
+> (changes inside the function stick), scalars by value. And awk has no `local`
+> keyword — the convention is to declare locals as **extra parameters** you never
+> pass: `function f(a, b,    i, tmp)` — the gap marks `i`/`tmp` as internal.
+
+#### Putting awk in its own file
+
+Long programs don't belong on one shell line. Two ways to file them:
+
+**1. A `.awk` file run with `-f`:**
+
+```awk
+# report.awk
+BEGIN { print "=== Salary Report ===" }
+NR > 1 && NF { total += $5; n++; print $2 "\t" $5 }
+END { printf "Total: %d  Average: %.2f\n", total, total/n }
+```
+```bash
+awk -f report.awk sample.txt
+```
+
+**2. An executable script with a shebang:**
+
+```awk
+#!/usr/bin/awk -f
+NR > 1 && NF && $5 > 50000 { print $2, $5 }
+```
+```bash
+chmod +x top.awk
+./top.awk sample.txt          # runs directly, file is the argument
+```
+> ✅ Both verified. Note the shebang is **`#!/usr/bin/awk -f`** — the `-f` is
+> required, and on Linux awk lives at `/usr/bin/awk`. `#!/usr/bin/env awk -f` is
+> the more portable form. Inside a `.awk` file, `#` starts a comment and no outer
+> quoting is needed — a big readability win over cramming it into `'...'`.
+
 #### Real-world one-liners
 
 ```bash
@@ -3741,11 +3976,46 @@ awk '{print $NF}' file                                     # last field of each 
 df -h | awk 'NR>1 {print $5, $6}'                          # disk %use and mount
 ```
 
+**Cleaning up other commands' output** — awk shines at trimming noise:
+
+```bash
+ls -ltr | awk 'NR>1 {print $NF}'          # filenames only, skipping the "total" line
+ls -ltr | awk '$6 == "Oct"'               # only files modified in October
+ps aux  | awk '$3 > 50 {print $2, $11}'   # PIDs burning >50% CPU
+systemctl status nginx | awk 'NR==3 {print $2}'   # just the Active/Inactive word
+free -m | awk 'NR==2 {printf "%.1f%%\n", $3/$2*100}'   # memory used, as a percent
+awk -F: '$3 >= 1000 {print $1}' /etc/passwd         # real (non-system) users
+```
+> ✅ Verified: `ls -ltr | awk 'NR>1 {print $NF}'` listed filenames with the
+> `total` header dropped. `NR>1` is the universal "skip the header" idiom.
+
+**The Day 37 pattern** — strip a `%` and compare it as a number:
+
+```bash
+df -h | awk 'NR>1 {gsub("%","",$5); if ($5 > 80) print "WARNING:", $6, $5"%"}'
+```
+`gsub("%","",$5)` deletes the `%` from field 5 (replacing it with nothing), which
+turns `"85%"` into `85` so the numeric `>` works. Exactly the hint on your
+[37_day.sh](Tier-3_Real-World_DevOps%20Patterns_%28Days%2036–50%29/37_day.sh).
+
 #### Key takeaways
 - awk = **`pattern { action }`** run per line; fields are `$1`,`$2`,…,`$NF`.
-- `-F` sets the delimiter (`-F,` for CSV). `NR` = line number, `NF` = field count.
+- **Patterns** select lines: `/regex/`, `NR==6`, `NR==3,NR==6` (range), `NF==0`
+  (blank), `$2 ~ /re/` (one field), `!` to negate.
+- `-F` sets the delimiter — `-F,` for CSV, `-F'[,:]'` for several at once. Set
+  **`OFS`** too if you modify fields, or your output separator reverts to a space.
+- **Don't quote numbers** in comparisons: `$1 > 5` is numeric, `$1 > "5"` is
+  alphabetical (and wrong).
+- `NR` = line number, `NF` = field count. `NR>1` skips a header; bare `NF` drops
+  blank lines.
 - `BEGIN`/`END` for headers/totals; `sum += $n` accumulates; `printf` formats.
 - `arr[$k]++` counts by key — a one-line GROUP BY.
+- **Functions:** `length` `index` `substr` `split` `toupper` `tolower`, and
+  `gsub(re,new)` which edits in place and returns a *count*.
+- Full programs: `if/else`, `for`, `while`, arrays and `function` — put anything
+  long in a `.awk` file and run `awk -f script.awk data`.
+- ⚠️ **`IGNORECASE` is gawk-only** (fails silently on Debian/Ubuntu's mawk) — use
+  `tolower($0) ~ /x/`.
 - Reach for awk over `cut` when you need **logic, math, or conditions** on columns.
 
 ## Section 7 — `cut`, `sort`, `uniq` (the pipeline finishers)
